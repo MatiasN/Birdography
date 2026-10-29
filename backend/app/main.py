@@ -2,9 +2,11 @@ from fastapi import Depends, FastAPI
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app import photos
 from app.db import get_db
 
 app = FastAPI(title="Birdography")
+app.include_router(photos.router)
 
 
 @app.get("/health")

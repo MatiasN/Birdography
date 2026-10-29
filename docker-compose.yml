@@ -19,8 +19,11 @@ services:
     environment:
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
+      UPLOAD_DIR: /data/photos
     ports:
       - "8000:8000"
+    volumes:
+      - ${UPLOAD_DIR:-./data/photos}:/data/photos
     depends_on:
       db:
         condition: service_healthy

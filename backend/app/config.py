@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     postgres_password: str
     postgres_host: str = "localhost"
     postgres_port: int = 5432
+    upload_dir: str = "data/photos"
 
     @property
     def database_url(self) -> str:
