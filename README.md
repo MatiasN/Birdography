@@ -37,7 +37,7 @@ Open http://localhost:3000.
 
 ## Roadmap
 
-See [project_roadmap.md](project_roadmap.md).
+See [ROADMAP.md](ROADMAP.md).
 
 ## Contributing
 
