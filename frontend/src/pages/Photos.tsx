@@ -37,7 +37,12 @@ export default function Photos() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
         {photos.map((photo) => (
           <figure key={photo.id} className="bg-white rounded overflow-hidden shadow-sm">
-            <img src={photoUrl(photo)} alt="" loading="lazy" className="aspect-square w-full object-cover bg-stone-200" />
+            <img
+              src={photoUrl(photo)}
+              alt=""
+              loading="lazy"
+              className="aspect-square w-full object-cover bg-stone-200"
+            />
             <figcaption className="px-2 py-1 text-xs text-stone-500 truncate">
               {photo.taken_at ? new Date(photo.taken_at).toLocaleDateString() : "No date"}
               {photo.camera && ` · ${photo.camera}`}
