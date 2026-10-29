@@ -10,6 +10,15 @@ class Base(DeclarativeBase):
     pass
 
 
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Species(Base):
     __tablename__ = "species"
 
@@ -24,6 +33,7 @@ class Location(Base):
     __tablename__ = "locations"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(200))
     point: Mapped[WKBElement] = mapped_column(Geography("POINT", srid=4326))
     lat: Mapped[float] = column_property(func.ST_Y(cast(point, Geometry(srid=4326))))
@@ -34,6 +44,7 @@ class Photo(Base):
     __tablename__ = "photos"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     file_path: Mapped[str] = mapped_column(String(500), unique=True)
     taken_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -2,6 +2,7 @@ import io
 import os
 
 os.environ["POSTGRES_DB"] = os.environ.get("TEST_POSTGRES_DB", "birdography_test")
+os.environ.setdefault("SECRET_KEY", "test-secret")
 
 import pytest  # noqa: E402
 from alembic import command  # noqa: E402
@@ -9,7 +10,9 @@ from alembic.config import Config  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from PIL import Image  # noqa: E402
 from sqlalchemy import create_engine, make_url, text  # noqa: E402
+from sqlalchemy.orm import Session  # noqa: E402
 
+from app.auth import create_user  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.db import engine  # noqa: E402
 from app.main import app  # noqa: E402
@@ -31,13 +34,30 @@ def database():
 def clean_tables():
     yield
     with engine.begin() as conn:
-        conn.execute(text("TRUNCATE photos, locations, species RESTART IDENTITY CASCADE"))
+        conn.execute(text("TRUNCATE photos, locations, species, users RESTART IDENTITY CASCADE"))
+
+
+@pytest.fixture(autouse=True)
+def uploads(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "upload_dir", str(tmp_path))
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "upload_dir", str(tmp_path))
+def anon():
     return TestClient(app)
+
+
+def login(email: str, password: str = "secret") -> TestClient:
+    with Session(engine) as db:
+        create_user(db, email, password)
+    client = TestClient(app)
+    client.post("/auth/login", json={"email": email, "password": password}).raise_for_status()
+    return client
+
+
+@pytest.fixture
+def client():
+    return login("me@example.com")
 
 
 def make_jpeg(camera=None, taken_at=None, lat=None, lon=None) -> bytes:

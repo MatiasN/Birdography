@@ -10,8 +10,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import exif, storage
+from app.auth import CurrentUser
 from app.db import DB
-from app.models import Photo
+from app.models import Location, Photo, User
 
 ALLOWED = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".dng", ".cr2", ".cr3", ".nef", ".arw", ".orf", ".rw2", ".raf"}
 
@@ -39,7 +40,7 @@ class PhotoUpdate(BaseModel):
 
 
 @router.post("", response_model=PhotoOut, status_code=201)
-def upload(file: UploadFile, db: DB):
+def upload(file: UploadFile, db: DB, user: CurrentUser):
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in ALLOWED:
         raise HTTPException(400, f"Unsupported file type: {suffix or 'none'}")
@@ -51,6 +52,7 @@ def upload(file: UploadFile, db: DB):
         point = WKTElement(f"POINT({meta['lon']} {meta['lat']})", srid=4326)
 
     photo = Photo(
+        owner_id=user.id,
         file_path=name,
         taken_at=meta["taken_at"],
         camera=meta["camera"],
@@ -67,6 +69,7 @@ def upload(file: UploadFile, db: DB):
 @router.get("", response_model=list[PhotoOut])
 def list_photos(
     db: DB,
+    user: CurrentUser,
     species_id: int | None = None,
     camera: str | None = None,
     taken_from: datetime | None = None,
@@ -74,7 +77,7 @@ def list_photos(
     limit: int = Query(50, le=200),
     offset: int = 0,
 ):
-    query = select(Photo).order_by(Photo.taken_at.desc().nulls_last(), Photo.id.desc())
+    query = select(Photo).where(Photo.owner_id == user.id).order_by(Photo.taken_at.desc().nulls_last(), Photo.id.desc())
     if species_id is not None:
         query = query.where(Photo.species_id == species_id)
     if camera:
@@ -87,14 +90,19 @@ def list_photos(
 
 
 @router.get("/{photo_id}", response_model=PhotoOut)
-def get_photo(photo_id: int, db: DB):
-    return _get(db, photo_id)
+def get_photo(photo_id: int, db: DB, user: CurrentUser):
+    return _get(db, user, photo_id)
 
 
 @router.patch("/{photo_id}", response_model=PhotoOut)
-def update_photo(photo_id: int, data: PhotoUpdate, db: DB):
-    photo = _get(db, photo_id)
-    for key, value in data.model_dump(exclude_unset=True).items():
+def update_photo(photo_id: int, data: PhotoUpdate, db: DB, user: CurrentUser):
+    photo = _get(db, user, photo_id)
+    changes = data.model_dump(exclude_unset=True)
+    if changes.get("location_id") is not None:
+        location = db.get(Location, changes["location_id"])
+        if not location or location.owner_id != user.id:
+            raise HTTPException(400, "Unknown species or location")
+    for key, value in changes.items():
         setattr(photo, key, value)
     try:
         db.commit()
@@ -105,16 +113,16 @@ def update_photo(photo_id: int, data: PhotoUpdate, db: DB):
 
 
 @router.get("/{photo_id}/file")
-def get_file(photo_id: int, db: DB):
-    photo = _get(db, photo_id)
+def get_file(photo_id: int, db: DB, user: CurrentUser):
+    photo = _get(db, user, photo_id)
     path = storage.path(photo.file_path)
     if not path.exists():
         raise HTTPException(404, "File missing")
     return FileResponse(path)
 
 
-def _get(db: Session, photo_id: int) -> Photo:
+def _get(db: Session, user: User, photo_id: int) -> Photo:
     photo = db.get(Photo, photo_id)
-    if not photo:
+    if not photo or photo.owner_id != user.id:
         raise HTTPException(404, "Photo not found")
     return photo

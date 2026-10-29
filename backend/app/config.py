@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     upload_dir: str = "data/photos"
+    secret_key: str
+    session_days: int = 30
+    secure_cookies: bool = False
+    allow_registration: bool = False
 
     @property
     def database_url(self) -> str:
