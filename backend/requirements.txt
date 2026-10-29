@@ -6,3 +6,4 @@ psycopg[binary]>=3.2
 alembic>=1.14
 geoalchemy2>=0.15
 python-multipart>=0.0.18
+exifread>=3.0

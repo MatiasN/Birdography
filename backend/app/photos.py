@@ -2,10 +2,11 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from geoalchemy2 import WKTElement
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy.orm import Session
 
-from app import storage
+from app import exif, storage
 from app.db import get_db
 from app.models import Photo
 
@@ -20,6 +21,9 @@ class PhotoOut(BaseModel):
     id: int
     file_path: str
     uploaded_at: datetime
+    taken_at: datetime | None
+    camera: str | None
+    lens: str | None
 
 
 @router.post("", response_model=PhotoOut, status_code=201)
@@ -28,7 +32,20 @@ def upload(file: UploadFile, db: Session = Depends(get_db)):
     if suffix not in ALLOWED:
         raise HTTPException(400, f"Unsupported file type: {suffix or 'none'}")
 
-    photo = Photo(file_path=storage.save(file.file, suffix))
+    name = storage.save(file.file, suffix)
+    meta = exif.read(storage.path(name))
+    point = None
+    if meta["lat"] is not None and meta["lon"] is not None:
+        point = WKTElement(f"POINT({meta['lon']} {meta['lat']})", srid=4326)
+
+    photo = Photo(
+        file_path=name,
+        taken_at=meta["taken_at"],
+        camera=meta["camera"],
+        lens=meta["lens"],
+        exif=meta["exif"],
+        point=point,
+    )
     db.add(photo)
     db.commit()
     db.refresh(photo)
