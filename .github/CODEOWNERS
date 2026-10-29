@@ -1,0 +1,6 @@
+# Code owners are automatically requested for review on pull requests
+# that touch matching paths. Later rules take precedence over earlier ones.
+# Docs: https://docs.github.com/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything in the repo
+* @MatiasN
