@@ -147,3 +147,5 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+project_roadmap.md
+project_readme.md
