@@ -1,10 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.db import DB
 from app.models import Species
 
 router = APIRouter(prefix="/species", tags=["species"])
@@ -25,10 +24,10 @@ class SpeciesOut(SpeciesIn):
 
 @router.get("", response_model=list[SpeciesOut])
 def list_species(
+    db: DB,
     q: str | None = None,
     limit: int = Query(50, le=200),
     offset: int = 0,
-    db: Session = Depends(get_db),
 ):
     query = select(Species).order_by(Species.scientific_name)
     if q:
@@ -40,7 +39,7 @@ def list_species(
 
 
 @router.get("/{species_id}", response_model=SpeciesOut)
-def get_species(species_id: int, db: Session = Depends(get_db)):
+def get_species(species_id: int, db: DB):
     species = db.get(Species, species_id)
     if not species:
         raise HTTPException(404, "Species not found")
@@ -48,12 +47,12 @@ def get_species(species_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("", response_model=SpeciesOut, status_code=201)
-def create_species(data: SpeciesIn, db: Session = Depends(get_db)):
+def create_species(data: SpeciesIn, db: DB):
     species = Species(**data.model_dump())
     db.add(species)
     try:
         db.commit()
     except IntegrityError:
-        raise HTTPException(409, "Species already exists")
+        raise HTTPException(409, "Species already exists") from None
     db.refresh(species)
     return species

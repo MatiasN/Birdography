@@ -1,7 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
+from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from geoalchemy2 import WKTElement
 from pydantic import BaseModel, ConfigDict
@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import exif, storage
-from app.db import get_db
+from app.db import DB
 from app.models import Photo
 
 ALLOWED = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".dng", ".cr2", ".cr3", ".nef", ".arw", ".orf", ".rw2", ".raf"}
@@ -39,7 +39,7 @@ class PhotoUpdate(BaseModel):
 
 
 @router.post("", response_model=PhotoOut, status_code=201)
-def upload(file: UploadFile, db: Session = Depends(get_db)):
+def upload(file: UploadFile, db: DB):
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in ALLOWED:
         raise HTTPException(400, f"Unsupported file type: {suffix or 'none'}")
@@ -66,13 +66,13 @@ def upload(file: UploadFile, db: Session = Depends(get_db)):
 
 @router.get("", response_model=list[PhotoOut])
 def list_photos(
+    db: DB,
     species_id: int | None = None,
     camera: str | None = None,
     taken_from: datetime | None = None,
     taken_to: datetime | None = None,
     limit: int = Query(50, le=200),
     offset: int = 0,
-    db: Session = Depends(get_db),
 ):
     query = select(Photo).order_by(Photo.taken_at.desc().nulls_last(), Photo.id.desc())
     if species_id is not None:
@@ -87,25 +87,25 @@ def list_photos(
 
 
 @router.get("/{photo_id}", response_model=PhotoOut)
-def get_photo(photo_id: int, db: Session = Depends(get_db)):
+def get_photo(photo_id: int, db: DB):
     return _get(db, photo_id)
 
 
 @router.patch("/{photo_id}", response_model=PhotoOut)
-def update_photo(photo_id: int, data: PhotoUpdate, db: Session = Depends(get_db)):
+def update_photo(photo_id: int, data: PhotoUpdate, db: DB):
     photo = _get(db, photo_id)
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(photo, key, value)
     try:
         db.commit()
     except IntegrityError:
-        raise HTTPException(400, "Unknown species or location")
+        raise HTTPException(400, "Unknown species or location") from None
     db.refresh(photo)
     return photo
 
 
 @router.get("/{photo_id}/file")
-def get_file(photo_id: int, db: Session = Depends(get_db)):
+def get_file(photo_id: int, db: DB):
     photo = _get(db, photo_id)
     path = storage.path(photo.file_path)
     if not path.exists():
