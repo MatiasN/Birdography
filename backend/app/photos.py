@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse
 from geoalchemy2 import WKTElement
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import exif, storage
@@ -26,8 +27,15 @@ class PhotoOut(BaseModel):
     taken_at: datetime | None
     camera: str | None
     lens: str | None
+    lat: float | None
+    lon: float | None
     species_id: int | None
     location_id: int | None
+
+
+class PhotoUpdate(BaseModel):
+    species_id: int | None = None
+    location_id: int | None = None
 
 
 @router.post("", response_model=PhotoOut, status_code=201)
@@ -78,12 +86,35 @@ def list_photos(
     return db.scalars(query.limit(limit).offset(offset)).all()
 
 
+@router.get("/{photo_id}", response_model=PhotoOut)
+def get_photo(photo_id: int, db: Session = Depends(get_db)):
+    return _get(db, photo_id)
+
+
+@router.patch("/{photo_id}", response_model=PhotoOut)
+def update_photo(photo_id: int, data: PhotoUpdate, db: Session = Depends(get_db)):
+    photo = _get(db, photo_id)
+    for key, value in data.model_dump(exclude_unset=True).items():
+        setattr(photo, key, value)
+    try:
+        db.commit()
+    except IntegrityError:
+        raise HTTPException(400, "Unknown species or location")
+    db.refresh(photo)
+    return photo
+
+
 @router.get("/{photo_id}/file")
 def get_file(photo_id: int, db: Session = Depends(get_db)):
-    photo = db.get(Photo, photo_id)
-    if not photo:
-        raise HTTPException(404, "Photo not found")
+    photo = _get(db, photo_id)
     path = storage.path(photo.file_path)
     if not path.exists():
         raise HTTPException(404, "File missing")
     return FileResponse(path)
+
+
+def _get(db: Session, photo_id: int) -> Photo:
+    photo = db.get(Photo, photo_id)
+    if not photo:
+        raise HTTPException(404, "Photo not found")
+    return photo

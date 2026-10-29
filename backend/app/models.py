@@ -1,9 +1,9 @@
 from datetime import datetime
 
-from geoalchemy2 import Geography, WKBElement
-from sqlalchemy import DateTime, ForeignKey, String, func
+from geoalchemy2 import Geography, Geometry, WKBElement
+from sqlalchemy import DateTime, ForeignKey, String, cast, func
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, column_property, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -26,6 +26,8 @@ class Location(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(200))
     point: Mapped[WKBElement] = mapped_column(Geography("POINT", srid=4326))
+    lat: Mapped[float] = column_property(func.ST_Y(cast(point, Geometry(srid=4326))))
+    lon: Mapped[float] = column_property(func.ST_X(cast(point, Geometry(srid=4326))))
 
 
 class Photo(Base):
@@ -39,6 +41,8 @@ class Photo(Base):
     lens: Mapped[str | None] = mapped_column(String(200))
     exif: Mapped[dict | None] = mapped_column(JSONB)
     point: Mapped[WKBElement | None] = mapped_column(Geography("POINT", srid=4326))
+    lat: Mapped[float | None] = column_property(func.ST_Y(cast(point, Geometry(srid=4326))))
+    lon: Mapped[float | None] = column_property(func.ST_X(cast(point, Geometry(srid=4326))))
     species_id: Mapped[int | None] = mapped_column(ForeignKey("species.id"), index=True)
     location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"), index=True)
 
