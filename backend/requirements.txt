@@ -4,3 +4,4 @@ pydantic-settings>=2.6
 sqlalchemy>=2.0
 psycopg[binary]>=3.2
 alembic>=1.14
+geoalchemy2>=0.15
