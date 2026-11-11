@@ -51,6 +51,7 @@ Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Credits
 
+- Time zones from positions: [tzfpy](https://github.com/ringsaturn/tzfpy) (MIT), whose zone boundaries come from [timezone-boundary-builder](https://github.com/evansiroky/timezone-boundary-builder), built from [OpenStreetMap](https://www.openstreetmap.org/copyright) data © OpenStreetMap contributors, licensed under the [ODbL](https://opendatacommons.org/licenses/odbl/).
 - RAW test fixtures: camera samples from [raw.pixls.us](https://raw.pixls.us/), dedicated to the public domain under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). Contributors are listed on each sample's page; the files used are in [backend/tests/fixtures/raw](backend/tests/fixtures/raw/README.md).
 
 ## License

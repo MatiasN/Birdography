@@ -152,6 +152,13 @@ def test_user_overrides_taken_date(client):
     assert reverted["taken_at_manual"] is False
 
 
+@pytest.mark.exiftool
+def test_offset_comes_from_gps_when_the_camera_has_none(client):
+    photo = upload(client, make_jpeg(taken_at="2020:04:02 18:19:31", lat=37.3, lon=-78.4)).json()
+    assert photo["taken_offset_minutes"] == -240
+    assert photo["taken_at"] == "2020-04-02T22:19:31Z"
+
+
 def test_delete_moves_to_trash(client):
     photo = upload(client).json()
     assert client.delete(f"/photos/{photo['id']}").status_code == 204

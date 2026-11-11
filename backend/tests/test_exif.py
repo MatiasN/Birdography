@@ -105,6 +105,22 @@ def test_camera_name_combines_make_and_model():
     assert exif.parse({"IFD0:Model": "SM-G973U"})["camera"] == "SM-G973U"
 
 
+def test_offset_derived_from_gps_when_the_camera_recorded_none():
+    tags = {
+        "ExifIFD:DateTimeOriginal": "2020:04:02 18:19:31",
+        "Composite:GPSLatitude": 37.3016666666667,
+        "Composite:GPSLongitude": -78.3952777777778,
+    }
+    meta = exif.parse(tags)
+    assert meta["taken_offset_minutes"] == -240  # Virginia, daylight saving time
+    assert meta["taken_at"].isoformat() == "2020-04-02T18:19:31-04:00"
+    # The camera's own offset wins over the position.
+    assert exif.parse({**tags, "ExifIFD:OffsetTimeOriginal": "+02:00"})["taken_offset_minutes"] == 120
+    # Without a time there is nothing to offset; without a position, nothing to derive from.
+    assert exif.parse({k: v for k, v in tags.items() if k.startswith("Composite")})["taken_offset_minutes"] is None
+    assert exif.parse({"ExifIFD:DateTimeOriginal": "2020:04:02 18:19:31"})["taken_offset_minutes"] is None
+
+
 def test_apply_sets_columns_and_point():
     photo = Photo(taken_at_manual=False)
     exif.apply(photo, {**exif.parse(FULL), "exif": FULL})

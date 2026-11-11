@@ -3,6 +3,9 @@
 `read` runs ExifTool; `parse` derives the columns from its tags and can be rerun from `photos.exif` without the
 file. Tags are keyed ExifTool style with group-1 prefixes (`ExifIFD:DateTimeOriginal`, `Composite:GPSLatitude`)
 and numeric values unconverted (`-n`), see `exiftool.metadata`.
+
+The UTC offset of the taken time comes from the camera when it records one, otherwise from the time zone at the
+photo's position, from its GPS tags.
 """
 
 from datetime import UTC, datetime, timedelta, timezone
@@ -11,7 +14,7 @@ from pathlib import Path
 
 from geoalchemy2 import WKTElement
 
-from app import exiftool
+from app import exiftool, timezones
 
 # These describe the file on disk (which is a temp file at upload time) or the tool, not the photo.
 DROPPED_GROUPS = ("System:", "ExifTool:")
@@ -36,6 +39,8 @@ def parse(tags: dict) -> dict:
     offset = _offset_minutes(tags.get("ExifIFD:OffsetTimeOriginal")) if local else None
     # Composite values are signed and cover EXIF, XMP and QuickTime GPS alike.
     lat, lon = _float(tags.get("Composite:GPSLatitude")), _float(tags.get("Composite:GPSLongitude"))
+    if local and offset is None and lat is not None and lon is not None:
+        offset = timezones.offset_minutes(lat, lon, local)
     lens_keys = ["ExifIFD:LensModel", *(k for k in tags if k.endswith(":LensModel"))]
     return {
         "taken_at_local": local,

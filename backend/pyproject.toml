@@ -14,6 +14,8 @@ dependencies = [
     "pyjwt>=2.15.1",
     "python-multipart>=0.0.18",
     "sqlalchemy>=2.0",
+    "tzdata>=2026.6",
+    "tzfpy>=2.1.2",
     "uvicorn[standard]>=0.32",
 ]
 
