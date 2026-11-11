@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 os.environ["POSTGRES_DB"] = os.environ.get("TEST_POSTGRES_DB", "birdography_test")
-os.environ.setdefault("SECRET_KEY", "test-secret")
+os.environ.setdefault("SECRET_KEY", "test-secret-at-least-32-bytes-long")
 
 import pillow_heif  # noqa: E402
 import pytest  # noqa: E402
