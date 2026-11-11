@@ -23,6 +23,7 @@ export type Photo = {
   focal_length_mm: number | null;
   lat: number | null;
   lon: number | null;
+  point_manual: boolean;
   species_ids: number[];
   location_id: number | null;
   files: PhotoFile[];
@@ -85,3 +86,11 @@ export const photoUrl = (photo: Photo, kind: PhotoFile["kind"] = "thumbnail") =>
 /** The date the photo was taken as the camera (or the user) recorded it, without time zone shifts. */
 export const takenDate = (photo: Photo) =>
   photo.taken_at_local ? new Date(photo.taken_at_local).toLocaleDateString() : null;
+
+/** 60 -> "UTC+01:00", -210 -> "UTC-03:30". */
+export function offsetLabel(minutes: number): string {
+  const sign = minutes < 0 ? "-" : "+";
+  const abs = Math.abs(minutes);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `UTC${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+}

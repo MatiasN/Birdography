@@ -10,6 +10,7 @@ import {
   type Health,
   type Photo,
 } from "../api";
+import PhotoDetail from "../PhotoDetail";
 
 const ACCEPT = IMAGE_EXTENSIONS.map((ext) => `.${ext}`).join(",");
 /** Large uploads get their thumbnail after the response; fetch the photo again once, after this delay. */
@@ -20,9 +21,11 @@ export default function Photos() {
   const [limits, setLimits] = useState<Health["limits"] | null>(null);
   const [uploading, setUploading] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+  const [selected, setSelected] = useState<Photo | null>(null);
 
   function replace(fresh: Photo) {
     setPhotos((current) => current.map((p) => (p.id === fresh.id ? fresh : p)));
+    setSelected((current) => (current?.id === fresh.id ? fresh : current));
   }
 
   const load = () => api<Photo[]>("/photos").then(setPhotos);
@@ -84,7 +87,11 @@ export default function Photos() {
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
         {photos.map((photo) => (
-          <figure key={photo.id} className="bg-white rounded overflow-hidden shadow-sm">
+          <figure
+            key={photo.id}
+            onClick={() => setSelected(photo)}
+            className="bg-white rounded overflow-hidden shadow-sm cursor-pointer hover:shadow"
+          >
             <img
               src={photoUrl(photo)}
               alt=""
@@ -94,10 +101,13 @@ export default function Photos() {
             <figcaption className="px-2 py-1 text-xs text-stone-500 truncate">
               {takenDate(photo) ?? "No date"}
               {photo.camera && ` · ${photo.camera}`}
+              {photo.lat === null && <span className="ml-1 text-amber-700">· No position</span>}
             </figcaption>
           </figure>
         ))}
       </div>
+
+      {selected && <PhotoDetail photo={selected} onChange={replace} onClose={() => setSelected(null)} />}
     </div>
   );
 }
