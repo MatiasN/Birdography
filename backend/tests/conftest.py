@@ -2,6 +2,7 @@ import io
 import itertools
 import os
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 
 os.environ["POSTGRES_DB"] = os.environ.get("TEST_POSTGRES_DB", "birdography_test")
@@ -23,6 +24,7 @@ from app.db import engine  # noqa: E402
 from app.main import app  # noqa: E402
 
 TABLES = "photo_species, photo_files, photos, locations, species, users"
+RAW_DIR = Path(__file__).parent / "fixtures" / "raw"
 
 pillow_heif.register_heif_opener()
 
@@ -125,3 +127,60 @@ def make_jpeg(camera=None, taken_at=None, offset=None, lat=None, lon=None, setti
     buf = io.BytesIO()
     Image.new("RGB", (8, 8)).save(buf, "JPEG", exif=exif)
     return buf.getvalue()
+
+
+@dataclass(frozen=True)
+class RawSample:
+    """A real camera file under `tests/fixtures/raw/`, shrunk by `shrink.py`; see the README there."""
+
+    file: str
+    format: str
+    mime_type: str
+    model: str
+    taken_at: str  # DateTimeOriginal as ExifTool prints it
+    preview_size: tuple[int, int]  # largest embedded JPEG
+    size: tuple[int, int]  # visible image, what `exif.raw_dimensions` must report
+
+    @property
+    def path(self) -> Path:
+        return RAW_DIR / self.file
+
+    def read(self) -> bytes:
+        return self.path.read_bytes()
+
+
+RAW_SAMPLES = {
+    s.format: s
+    for s in (
+        RawSample(
+            "nikon_z5_2.nef",
+            "nef",
+            "image/x-nikon-nef",
+            "NIKON Z5_2",
+            "2025:04:27 17:57:05",
+            (3984, 2656),
+            (3984, 2656),
+        ),
+        RawSample(
+            "canon_eos_r6_mark_iii.cr3",
+            "cr3",
+            "image/x-canon-cr3",
+            "Canon EOS R6 Mark III",
+            "2026:01:22 15:41:52",
+            (4320, 2880),
+            (4320, 2880),
+        ),
+        RawSample(
+            "sony_ilce_7s.arw", "arw", "image/x-sony-arw", "ILCE-7S", "2017:07:13 16:58:28", (1616, 1080), (2768, 1848)
+        ),
+        RawSample(
+            "canon_eos_5d_mark_iii_adobe.dng",
+            "dng",
+            "image/x-adobe-dng",
+            "Canon EOS 5D Mark III",
+            "2017:01:05 13:53:29",
+            (3960, 2640),
+            (3960, 2640),
+        ),
+    )
+}

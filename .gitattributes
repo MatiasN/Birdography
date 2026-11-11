@@ -1,3 +1,8 @@
 * text=auto eol=lf
 *.bat text eol=crlf
 *.ps1 text eol=crlf
+# Camera RAW test fixtures
+*.nef binary
+*.cr3 binary
+*.arw binary
+*.dng binary

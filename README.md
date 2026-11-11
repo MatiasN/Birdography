@@ -49,6 +49,10 @@ See [ROADMAP.md](ROADMAP.md).
 
 Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
+## Credits
+
+- RAW test fixtures: camera samples from [raw.pixls.us](https://raw.pixls.us/), dedicated to the public domain under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). Contributors are listed on each sample's page; the files used are in [backend/tests/fixtures/raw](backend/tests/fixtures/raw/README.md).
+
 ## License
 
 [MIT](LICENSE)

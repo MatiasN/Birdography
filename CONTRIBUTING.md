@@ -151,6 +151,8 @@ uv run pytest
 
 Tests marked `exiftool` are skipped when ExifTool is not installed. CI installs it and runs everything.
 
+RAW handling is tested against real camera files (NEF, CR3, ARW, DNG) in `backend/tests/fixtures/raw/`, shrunk to under 2.1 MB each by dropping their sensor data. [Its README](backend/tests/fixtures/raw/README.md) lists the sources and explains how to regenerate the files or add a camera.
+
 ## Code style
 
 ```bash
