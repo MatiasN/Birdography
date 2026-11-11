@@ -192,6 +192,54 @@ def test_restorable_kinds_match_the_parser():
     assert Species in cli.trash.RESTORABLE.values()
 
 
+def files_of(photo_id: int) -> dict[str, PhotoFile]:
+    with Session(engine) as db:
+        return {f.kind: f for f in db.get(Photo, photo_id).files}
+
+
+def test_verify_files_all_good(monkeypatch, capsys, client):
+    photo = upload(client)
+    storage.path(".tmp/leftover").parent.mkdir(exist_ok=True)
+    storage.path(".tmp/leftover").write_bytes(b"x")  # dot directories are not catalog files
+    storage.path(".pre-restore-1/old.jpg").parent.mkdir()
+    storage.path(".pre-restore-1/old.jpg").write_bytes(b"x")
+    out = run(monkeypatch, capsys, "verify-files", "--checksums")
+    assert out.strip() == f"{len(files_of(photo['id']))} files checked: 0 missing, 0 damaged, 0 unreferenced"
+
+
+def test_verify_files_reports_problems(monkeypatch, capsys, client):
+    photo, other, pending = upload(client), upload(client), upload(client)
+    gone = files_of(photo["id"])["original"]
+    storage.remove(gone.path)
+    resized = files_of(other["id"])["original"]
+    storage.path(resized.path).write_bytes(b"truncated")
+    with Session(engine) as db:  # a row from migration 0006 that backfill-files has not completed
+        db.get(PhotoFile, files_of(pending["id"])["original"].id).sha256 = f"pending:{pending['id']}"
+        db.commit()
+    storage.path(files_of(pending["id"])["original"].path).write_bytes(b"not compared")
+    storage.path("stray.jpg").write_bytes(b"x")
+
+    with pytest.raises(SystemExit) as exit:
+        run(monkeypatch, capsys, "verify-files")
+    assert exit.value.code == 1
+    out = capsys.readouterr().out.splitlines()
+    assert f"missing: {gone.path} (photo {photo['id']}, original)" in out
+    assert f"damaged: {resized.path} (photo {other['id']}, original)" in out
+    assert "unreferenced: stray.jpg" in out
+    assert out[-1].endswith(": 1 missing, 1 damaged, 1 unreferenced")
+
+
+def test_verify_files_checksums_catch_same_size_damage(monkeypatch, capsys, client):
+    photo = upload(client)
+    original = files_of(photo["id"])["original"]
+    data = storage.path(original.path).read_bytes()
+    storage.path(original.path).write_bytes(bytes([data[0] ^ 1]) + data[1:])
+    assert run(monkeypatch, capsys, "verify-files").strip().endswith("0 missing, 0 damaged, 0 unreferenced")
+    with pytest.raises(SystemExit):
+        run(monkeypatch, capsys, "verify-files", "--checksums")
+    assert f"damaged: {original.path}" in capsys.readouterr().out
+
+
 class FakeOs:
     """Records the privilege calls drop_root makes, without needing root."""
 

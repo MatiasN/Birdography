@@ -40,6 +40,8 @@ Generate `POSTGRES_PASSWORD` and `SECRET_KEY` with `python -c "import secrets; p
 
 Open http://localhost:3000, or `http://<this machine's address>:3000` from another device, and log in. Only the web UI is published; the API is behind it at `/api/` and the database is not reachable from outside. Set `BIND_ADDRESS=127.0.0.1` to keep the UI to this machine. To serve it over HTTPS, put a reverse proxy in front and set `SECURE_COOKIES=true` and `TRUSTED_PROXIES`, see [Settings](CONTRIBUTING.md#settings).
 
+Photos are stored in `./data/photos` (`UPLOAD_DIR`) and the database in the `db-data` volume. Back both up with `scripts/backup.sh` and bring them back with `scripts/restore.sh`, see [Backups](CONTRIBUTING.md#backups).
+
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for running locally, migrations and tests.

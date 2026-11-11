@@ -62,3 +62,56 @@ jobs:
       - run: npm ci
       - run: npm run format:check
       - run: npm run build
+
+  # The production stack, as users run it: images build, services start unprivileged with a photo directory owned
+  # by someone else, only the UI is published, and a backup survives losing everything.
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE: docker compose -f docker-compose.yml
+      BIND_ADDRESS: 127.0.0.1
+    steps:
+      - uses: actions/checkout@v5
+      - name: Shell scripts
+        run: shellcheck scripts/*.sh backend/fix-permissions.sh frontend/real-ip.sh
+      - name: Configure
+        run: |
+          cp .env.example .env
+          sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$(openssl rand -hex 24)/" .env
+          sed -i "s/^SECRET_KEY=.*/SECRET_KEY=$(openssl rand -hex 32)/" .env
+          mkdir -p data/photos  # owned by the runner (uid 1001); the backend's entrypoint hands it to uid 1000
+      - name: Start
+        run: $COMPOSE up -d --build --wait
+      - name: Only the UI is published
+        run: |
+          $COMPOSE ps --format '{{.Service}} {{.Ports}}' | tee ports
+          grep -q '^frontend 127.0.0.1:3000->8080/tcp' ports
+          if grep -E '^(backend|db) .*->' ports; then echo 'backend or db is published'; exit 1; fi
+          test "$($COMPOSE exec -T backend stat -c %u /proc/1)" = 1000  # the server process, not the exec
+          curl -fsS localhost:3000/api/health
+      - name: Seed
+        run: |
+          $COMPOSE exec -T backend python -c "
+          from sqlalchemy.orm import Session
+          from app.auth import create_user
+          from app.db import engine
+          with Session(engine) as db: create_user(db, 'ci@example.com', 'ci-password-123')"
+          curl -fsS -c jar -H 'Content-Type: application/json' \
+            -d '{"email": "ci@example.com", "password": "ci-password-123"}' localhost:3000/api/auth/login
+          curl -fsS -b jar -F file=@backend/tests/fixtures/raw/sony_ilce_7s.arw localhost:3000/api/photos
+      - name: Back up, lose everything, restore
+        run: |
+          scripts/backup.sh /tmp/backups
+          $COMPOSE down -v
+          sudo rm -rf data/photos
+          $COMPOSE up -d --wait
+          scripts/restore.sh /tmp/backups/birdography-*
+      - name: Restored
+        run: |
+          curl -fsS -c jar -H 'Content-Type: application/json' \
+            -d '{"email": "ci@example.com", "password": "ci-password-123"}' localhost:3000/api/auth/login
+          curl -fsS -b jar 'localhost:3000/api/photos/1/file?kind=original' -o restored.arw
+          cmp restored.arw backend/tests/fixtures/raw/sony_ilce_7s.arw
+      - name: Logs
+        if: failure()
+        run: $COMPOSE logs

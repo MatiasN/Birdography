@@ -2,6 +2,7 @@ import argparse
 import os
 from datetime import timedelta
 from getpass import getpass
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -44,6 +45,8 @@ def main():
     derived.add_argument("--photo", type=int, help="only this photo id")
     reread = commands.add_parser("reread-metadata", help="read EXIF again with ExifTool and update the catalog")
     reread.add_argument("--photo", type=int, help="only this photo id")
+    verify = commands.add_parser("verify-files", help="check that every file in the catalog is on disk, intact")
+    verify.add_argument("--checksums", action="store_true", help="also compare SHA-256 hashes (reads every file)")
     args = parser.parse_args()
 
     with Session(engine) as db:
@@ -77,6 +80,9 @@ def main():
             backfill_files(db)
         elif args.command == "backfill-derivatives":
             backfill_derivatives(db, args.photo)
+        elif args.command == "verify-files":
+            if verify_files(db, checksums=args.checksums):
+                raise SystemExit(1)
         else:  # reread-metadata; argparse rejects anything else
             reread_metadata(db, args.photo)
 
@@ -132,6 +138,36 @@ def reread_metadata(db: Session, photo_id: int | None = None) -> int:
     db.commit()
     print(f"{updated} photos updated")
     return updated
+
+
+def verify_files(db: Session, checksums: bool = False) -> int:
+    """Compare `photo_files` with the upload directory, after a restore for example. Prints what is wrong and
+    returns the number of missing or damaged files; files no row refers to are listed but harmless."""
+    root = Path(settings.upload_dir)
+    missing = damaged = checked = 0
+    known = set()
+    for file in db.scalars(select(PhotoFile).order_by(PhotoFile.id)):
+        known.add(file.path)
+        checked += 1
+        stored = storage.path(file.path)
+        if not stored.is_file():
+            print(f"missing: {file.path} (photo {file.photo_id}, {file.kind})")
+            missing += 1
+            continue
+        if file.sha256.startswith("pending:"):  # rows from migration 0006 before backfill-files: nothing to compare
+            continue
+        if stored.stat().st_size != file.size_bytes or (checksums and storage.digest(file.path)[1] != file.sha256):
+            print(f"damaged: {file.path} (photo {file.photo_id}, {file.kind})")
+            damaged += 1
+    unreferenced = 0
+    for stored in sorted(root.rglob("*")):
+        relative = stored.relative_to(root)
+        # Dot directories are not catalog files: upload temp files, photos set aside by restore.sh.
+        if stored.is_file() and not relative.parts[0].startswith(".") and str(relative) not in known:
+            print(f"unreferenced: {relative}")
+            unreferenced += 1
+    print(f"{checked} files checked: {missing} missing, {damaged} damaged, {unreferenced} unreferenced")
+    return missing + damaged
 
 
 def backfill_files(db: Session) -> None:

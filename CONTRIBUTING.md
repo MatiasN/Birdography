@@ -13,6 +13,7 @@
 backend/    FastAPI app, Alembic migrations, pytest suite
 frontend/   React + Vite app
 docs/plans/ Design plans for roadmap items
+scripts/    backup.sh and restore.sh, run on the Docker host
 docker-compose.yml       db, backend, frontend
 compose.override.yml     dev extras, loaded automatically (backend hot reload)
 ```
@@ -113,6 +114,37 @@ In `.env` or the environment. A test (`tests/test_config.py`) fails when a backe
 | `API_URL` | `http://localhost:8000` | where `npm run dev` proxies `/api` (Vite only) |
 
 `GET /health` reports the upload limits and the ExifTool version in use (`null` if it is missing).
+
+## Backups
+
+All state is in two places: the database (`db-data` volume) and the photo files (`UPLOAD_DIR`). Both scripts run on the Docker host, from anywhere, against the running stack:
+
+```bash
+scripts/backup.sh [--db-only] [--keep N] [DEST]   # DEST defaults to ./backups
+scripts/restore.sh [--force] DEST/birdography-YYYYmmdd-HHMMSS
+```
+
+A backup is a directory with `db.dump` (`pg_dump`, run inside the db container so versions always match), `photos.tar` and `manifest.json` (date, schema revision, counts, SHA-256 of both files). It is readable by its owner only, since the dump holds password hashes. The photos are archived after the dump, so every file the dump refers to is in the archive. Avoid running `purge-trash` during a backup, since it deletes files.
+
+`--db-only` skips the photos. Photo files are written once under random names and never changed, so incremental tools (restic, borg, rsync, NAS snapshots) back them up well; above a few tens of GB, prefer `--db-only` plus one of those on `UPLOAD_DIR`. `--keep N` then deletes all but the newest N backups in `DEST`. Schedule it with cron or a systemd timer, for example nightly:
+
+```cron
+30 3 * * * cd /srv/birdography && scripts/backup.sh --keep 14 /mnt/backups/birdography
+```
+
+`restore.sh`:
+
+1. Checks the manifest checksums and refuses a backup from a newer version (a schema revision these migrations don't know).
+2. Refuses to replace an install that has accounts, unless `--force` is given.
+3. Restores into a side database and only swaps it in once `pg_restore` succeeded, so a failed restore changes nothing.
+4. Moves the current photo files to `.pre-restore-<date>/` inside the photo directory (never deletes them) and unpacks the archive.
+5. Restarts the backend, which migrates an older backup to the current schema, and runs `verify-files`.
+
+On a new machine, start the stack first (`docker compose up -d`), then restore. Delete `.pre-restore-*` once you have checked the result.
+
+Both scripts call `docker compose`; set `COMPOSE` for anything else, for example `COMPOSE="docker compose -p birdography" scripts/backup.sh`.
+
+`python -m app.cli verify-files [--checksums]` compares the catalog with the photo directory: files missing or with the wrong size (or hash, with `--checksums`, which reads everything) fail it, and files no row refers to are listed. Run it after restoring photos from your own file backup.
 
 ## Uploads
 
@@ -219,4 +251,4 @@ cd backend && uv run ruff check --fix . && uv run ruff format .
 cd frontend && npm run format
 ```
 
-CI runs lint, format checks, backend tests with the coverage gate, `alembic check` and the frontend build on every push and pull request.
+CI runs lint, format checks, backend tests with the coverage gate, `alembic check` and the frontend build on every push and pull request. A `deploy` job also runs shellcheck on the scripts, starts the production stack, checks that only the UI is published and that the backend runs unprivileged, then backs up, deletes everything, restores and compares the restored photo with the original.
