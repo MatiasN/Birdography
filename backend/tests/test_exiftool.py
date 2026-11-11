@@ -30,6 +30,7 @@ def test_file_type_by_content(tmp_path):
         "file_type": "JPEG",
         "extension": "jpg",
         "mime_type": "image/jpeg",
+        "model": None,
     }
 
     tiff = tmp_path / "upload2"
@@ -38,6 +39,7 @@ def test_file_type_by_content(tmp_path):
         "file_type": "TIFF",
         "extension": "tif",
         "mime_type": "image/tiff",
+        "model": None,
     }
 
 

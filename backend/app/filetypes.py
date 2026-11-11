@@ -95,4 +95,8 @@ def _tiff_family(path: Path, head: bytes) -> FileType | None:
         log.warning("cannot tell TIFF-based formats apart (%s); treating %s as TIFF", err, path.name)
         return TYPES["tiff"]
     fmt = TIFF_FAMILY.get(reported["file_type"] or "")
+    # NRW is the Coolpix variant of NEF, but ExifTool also reports it for NEFs from newer Nikon Z bodies
+    # (seen with the Z5_2 on ExifTool 13.50, with or without a .nef extension).
+    if fmt == "nrw" and "COOLPIX" not in (reported.get("model") or "").upper():
+        fmt = "nef"
     return TYPES[fmt] if fmt else None
