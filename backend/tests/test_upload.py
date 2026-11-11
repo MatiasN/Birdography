@@ -1,6 +1,8 @@
 """Upload API: content-based type detection, size limits, previews and thumbnails."""
 
 import io
+import os
+import time
 
 import exifread
 import pytest
@@ -9,9 +11,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import derivatives, storage
+from app.cli import backfill_derivatives
 from app.config import settings
 from app.db import engine
-from app.models import PhotoFile
+from app.models import Photo, PhotoFile
 from tests.conftest import make_image, make_jpeg, stored
 
 # Just enough of a Canon CR3 container to be detected as one; nothing else in it is valid.
@@ -197,3 +200,33 @@ def test_duplicate_upload_leaves_no_files_behind(client):
     before = stored()
     assert upload(client, data).status_code == 409
     assert stored() == before
+
+
+def test_backfill_derivatives_fills_gaps_and_is_idempotent(client):
+    photo = upload(client, make_jpeg()).json()
+    with Session(engine) as db:
+        thumbnail = db.scalar(select(PhotoFile).where(PhotoFile.photo_id == photo["id"], PhotoFile.kind == "thumbnail"))
+        storage.remove(thumbnail.path)
+        db.delete(thumbnail)
+        db.commit()
+    assert set(kinds(client.get(f"/photos/{photo['id']}").json())) == {"original"}
+
+    with Session(engine) as db:
+        assert backfill_derivatives(db) == 1
+        assert backfill_derivatives(db) == 0
+        assert backfill_derivatives(db, photo_id=photo["id"] + 1) == 0
+    assert set(kinds(client.get(f"/photos/{photo['id']}").json())) == {"original", "thumbnail"}
+    with Session(engine) as db:
+        assert db.scalar(select(Photo).where(Photo.id == photo["id"])).file("thumbnail") is not None
+
+
+def test_sweep_removes_only_old_temp_files():
+    old, fresh = storage.temp_name(), storage.temp_name()
+    for name in (old, fresh):
+        storage.path(name).parent.mkdir(parents=True, exist_ok=True)
+        storage.path(name).write_bytes(b"partial")
+    two_hours_ago = time.time() - 7200
+    os.utime(storage.path(old), (two_hours_ago, two_hours_ago))
+
+    assert storage.sweep_temp() == 1
+    assert stored() == [fresh]

@@ -1,5 +1,6 @@
 import hashlib
 import os
+import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,8 +10,9 @@ from app.config import settings
 
 CHUNK = 1024 * 1024
 MB = 1024 * 1024
-# Uploads land here until their type is known.
+# Uploads land here until their type is known; anything left behind is swept by `purge-trash`.
 TEMP_DIR = ".tmp"
+TEMP_MAX_AGE = 3600
 
 
 @dataclass
@@ -65,6 +67,17 @@ def digest(name: str) -> tuple[int, str]:
 
 def remove(name: str) -> None:
     path(name).unlink(missing_ok=True)
+
+
+def sweep_temp(max_age: float = TEMP_MAX_AGE, now: float | None = None) -> int:
+    """Delete temp files older than `max_age` seconds (left by crashed uploads). Returns how many."""
+    now = now if now is not None else time.time()
+    count = 0
+    for file in path(TEMP_DIR).glob("*"):
+        if file.is_file() and now - file.stat().st_mtime > max_age:
+            file.unlink(missing_ok=True)
+            count += 1
+    return count
 
 
 def _write(file: BinaryIO, name: str, max_bytes: int | None) -> Saved:
