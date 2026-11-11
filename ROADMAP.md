@@ -18,7 +18,7 @@ Photo handling, species data and a first look at the map.
   - naming convention for constraints and indexes, offline-capable Alembic, `alembic check` in CI
 - [x] Photo upload API: JPEG, PNG, TIFF, HEIC, WebP and RAW (NEF, CR2, CR3, ARW, DNG, RAF, ORF, RW2, PEF); 40 MB limit, 70 MB for RAW; detection by content; RAW preview and thumbnails extracted with ExifTool, see [plan 0002](docs/plans/0002-phase1-photo-upload-api.md)
 - [x] Real RAW test fixtures: CC0 samples from raw.pixls.us (NEF, CR3, ARW, DNG) under `backend/tests/fixtures/raw/`, shrunk to their metadata and embedded JPEGs; they cover content detection of extension-less files, embedded preview extraction and the RAW upload limit, see [plan 0003](docs/plans/0003-phase1-raw-fixtures-and-exif.md)
-- [ ] EXIF extraction with ExifTool: GPS, local timestamp with offset, camera settings; offset derived from GPS position when the camera records none; RAW dimensions from `ImageWidth`/`ImageHeight`
+- [x] EXIF extraction with ExifTool: GPS, local timestamp with offset, camera settings; offset derived from the GPS position (or a spot chosen on the map) when the camera records none; RAW dimensions from the crop tags rather than the sensor size, see [plan 0003](docs/plans/0003-phase1-raw-fixtures-and-exif.md)
 - [ ] RAW+JPEG pairs uploaded as one photo (the camera JPEG becomes the preview)
 - [ ] Photo catalog UI with filters by species, date and camera
 - [ ] Map with photo markers

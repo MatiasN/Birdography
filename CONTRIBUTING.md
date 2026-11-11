@@ -120,6 +120,22 @@ Run `purge-trash` periodically (cron on the host, for example). Nothing schedule
 
 After upgrading an install that predates `photo_files` (migration 0006), run `python -m app.cli backfill-files` once to compute file hashes and sizes for existing photos.
 
+## Metadata
+
+Date, camera settings and GPS are read from every upload with ExifTool and the full tag set is kept in `photos.exif`. To read them again, for example after upgrading from a version that used `exifread` (different tag names, nothing from CR3), for photos uploaded while ExifTool was missing, or after an ExifTool upgrade:
+
+```bash
+python -m app.cli reread-metadata [--photo ID]
+```
+
+It rewrites the metadata columns from the stored originals, and the width and height of RAW originals, keeps dates and positions the user set by hand and skips photos whose original is missing.
+
+RAW width and height are the visible image, as the camera's own JPEG would be, not the sensor size with its margins: they come from `DefaultCropSize` (DNG, newer ARW), Nikon's `CropArea`, the EXIF image size, and only then ExifTool's `ImageSize`. Other formats get their dimensions from Pillow.
+
+### Time zone of the taken date
+
+`taken_offset_minutes` is the camera's `OffsetTimeOriginal` when it records one (bodies from about 2019 on). Otherwise it is the offset of the time zone at the photo's position on that date, looked up with tzfpy and `zoneinfo`; without a position it stays null and `taken_at` reads the local time as UTC. The position is the camera's GPS, or a spot the user chose on the map (`PATCH /photos/{id}` with `lat` and `lon`, both or neither; nulls go back to the camera's GPS; `point_manual` in the response tells which). A date set by the user is never touched by a position change; reverting it (`taken_at_local: null`) derives the offset again from the current position.
+
 ## Migrations
 
 Migrations run automatically when the backend container starts. To create one after changing `app/models.py`:
