@@ -82,7 +82,7 @@ def upload(file: UploadFile, db: DB, user: CurrentUser):
     if temp.size > limit_mb * MB:
         storage.remove(temp.name)
         raise HTTPException(413, f"{ftype.format.upper()} files are limited to {limit_mb} MB")
-    if db.scalar(select(PhotoFile.id).where(PhotoFile.sha256 == temp.sha256)):
+    if db.scalar(select(PhotoFile.id).where(PhotoFile.sha256 == temp.sha256, PhotoFile.kind == "original")):
         storage.remove(temp.name)
         raise HTTPException(409, "This file has already been uploaded")
 

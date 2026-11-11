@@ -16,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     cast,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, column_property, mapped_column, relationship
@@ -127,6 +128,9 @@ class PhotoFile(Base):
     __table_args__ = (
         UniqueConstraint("photo_id", "kind", name="uq_photo_files_photo_id_kind"),
         CheckConstraint("kind IN ('original', 'preview', 'thumbnail')", name="kind"),
+        # Duplicate detection only concerns originals: previews and thumbnails are derived deterministically,
+        # so two different originals can legitimately share an identical derived file.
+        Index("ix_photo_files_sha256_original", "sha256", unique=True, postgresql_where=text("kind = 'original'")),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -138,8 +142,7 @@ class PhotoFile(Base):
     format: Mapped[str] = mapped_column(String(10))
     is_raw: Mapped[bool] = mapped_column(Boolean)
     size_bytes: Mapped[int] = mapped_column(BigInteger)
-    # Unique across all users: the same file cannot be uploaded twice.
-    sha256: Mapped[str] = mapped_column(String(64), unique=True)
+    sha256: Mapped[str] = mapped_column(String(64))
     width: Mapped[int | None]
     height: Mapped[int | None]
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
