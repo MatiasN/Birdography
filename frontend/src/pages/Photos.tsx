@@ -1,5 +1,5 @@
 import { useEffect, useState, type ChangeEvent } from "react";
-import { api, photoUrl, type Photo } from "../api";
+import { api, photoUrl, takenDate, type Photo } from "../api";
 
 const ACCEPT = "image/*,.dng,.cr2,.cr3,.nef,.arw,.orf,.rw2,.raf";
 
@@ -44,7 +44,7 @@ export default function Photos() {
               className="aspect-square w-full object-cover bg-stone-200"
             />
             <figcaption className="px-2 py-1 text-xs text-stone-500 truncate">
-              {photo.taken_at ? new Date(photo.taken_at).toLocaleDateString() : "No date"}
+              {takenDate(photo) ?? "No date"}
               {photo.camera && ` · ${photo.camera}`}
             </figcaption>
           </figure>
