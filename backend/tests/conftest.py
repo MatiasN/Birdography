@@ -33,6 +33,8 @@ def database():
 @pytest.fixture(autouse=True)
 def clean_tables():
     yield
+    # Migration tests move the schema around; leave it at head even if one of them failed midway.
+    command.upgrade(Config("alembic.ini"), "head")
     with engine.begin() as conn:
         conn.execute(text("TRUNCATE photos, locations, species, users RESTART IDENTITY CASCADE"))
 

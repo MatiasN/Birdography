@@ -1,13 +1,21 @@
 from datetime import datetime
 
 from geoalchemy2 import Geography, Geometry, WKBElement
-from sqlalchemy import DateTime, ForeignKey, String, cast, func
+from sqlalchemy import DateTime, ForeignKey, Index, MetaData, String, cast, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, column_property, mapped_column, relationship
 
+NAMING_CONVENTION = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
+
 
 class Base(DeclarativeBase):
-    pass
+    metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
 class User(Base):
@@ -31,17 +39,19 @@ class Species(Base):
 
 class Location(Base):
     __tablename__ = "locations"
+    __table_args__ = (Index("ix_locations_point", "point", postgresql_using="gist"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(200))
-    point: Mapped[WKBElement] = mapped_column(Geography("POINT", srid=4326))
+    point: Mapped[WKBElement] = mapped_column(Geography("POINT", srid=4326, spatial_index=False))
     lat: Mapped[float] = column_property(func.ST_Y(cast(point, Geometry(srid=4326))))
     lon: Mapped[float] = column_property(func.ST_X(cast(point, Geometry(srid=4326))))
 
 
 class Photo(Base):
     __tablename__ = "photos"
+    __table_args__ = (Index("ix_photos_point", "point", postgresql_using="gist"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
@@ -51,7 +61,7 @@ class Photo(Base):
     camera: Mapped[str | None] = mapped_column(String(200))
     lens: Mapped[str | None] = mapped_column(String(200))
     exif: Mapped[dict | None] = mapped_column(JSONB)
-    point: Mapped[WKBElement | None] = mapped_column(Geography("POINT", srid=4326))
+    point: Mapped[WKBElement | None] = mapped_column(Geography("POINT", srid=4326, spatial_index=False))
     lat: Mapped[float | None] = column_property(func.ST_Y(cast(point, Geometry(srid=4326))))
     lon: Mapped[float | None] = column_property(func.ST_X(cast(point, Geometry(srid=4326))))
     species_id: Mapped[int | None] = mapped_column(ForeignKey("species.id"), index=True)
