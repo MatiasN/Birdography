@@ -33,7 +33,7 @@ jobs:
       POSTGRES_HOST: localhost
       SECRET_KEY: ci-only-secret-key-at-least-32-characters
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.14"
@@ -53,7 +53,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v5
         with:
           node-version: 24
@@ -73,7 +73,7 @@ jobs:
       COMPOSE: docker compose -f docker-compose.yml
       BIND_ADDRESS: 127.0.0.1
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Shell scripts
         run: shellcheck scripts/*.sh backend/fix-permissions.sh frontend/real-ip.sh
       - name: Configure
