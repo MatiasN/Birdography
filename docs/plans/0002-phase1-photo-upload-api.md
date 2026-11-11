@@ -1,6 +1,6 @@
 # Plan 0002: Phase 1 photo upload API
 
-Status: done (2026-11-10) · Roadmap item: [Phase 1 → Photo upload API](../../ROADMAP.md) · Date: 2026-11-10
+Status: done (2026-11-10; real RAW test fixtures added by [plan 0003](0003-phase1-raw-fixtures-and-exif.md)) · Roadmap item: [Phase 1 → Photo upload API](../../ROADMAP.md) · Date: 2026-11-10
 
 > JPEG, PNG, TIFF, HEIC, WebP and RAW (NEF, CR2, CR3, ARW, DNG, RAF, ORF, RW2,
 > PEF); 40 MB limit, 70 MB for RAW; detection by content; RAW preview and
@@ -339,6 +339,8 @@ Taken on 2026-11-10 after the first draft.
   settings with the roadmap values as defaults, exposed by `/health` (§2.3).
 - **No ExifTool version pin.** 12.76 in CI and 13.x in the image both cover
   the format list; the version is printed in `/health` and the CI log (§2.4).
+  *Superseded on 2026-11-11 by [plan 0003](0003-phase1-raw-fixtures-and-exif.md)
+  §7.3: CI and the image both install a pinned 13.63.*
 
 ## 7. Pre-implementation checks
 
@@ -397,6 +399,11 @@ force: detection always runs on the extension-less temp file, and the test
 version that changes it is noticed. Not yet verified: that a real NEF
 *without* extension is reported as `NEF`; this needs a RAW sample and is
 covered by the fixture work in step 5.
+
+Closed by [plan 0003](0003-phase1-raw-fixtures-and-exif.md) §3 (2026-11-11):
+a real Nikon D40 NEF without extension is reported as `NEF`. A Nikon Z5_2 NEF
+is reported as `NRW` with or without extension, so detection now maps `NRW`
+to `nef` unless the model is a Coolpix.
 
 ## 8. Out of scope
 

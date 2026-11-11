@@ -14,7 +14,7 @@ log = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if exiftool.version() is None:
-        msg = "ExifTool not found (EXIFTOOL_PATH=%r); RAW uploads get no preview"
+        msg = "ExifTool not found (EXIFTOOL_PATH=%r); uploads get no metadata, RAW no preview"
         log.warning(msg, settings.exiftool_path)
     yield
 

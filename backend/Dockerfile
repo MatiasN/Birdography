@@ -2,8 +2,10 @@ FROM python:3.14-slim
 COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /bin/uv
 
 ENV UV_PROJECT_ENVIRONMENT=/opt/venv PATH="/opt/venv/bin:$PATH"
-# ExifTool: type detection and RAW previews. Not pinned; the version shows in /health.
-RUN apt-get update && apt-get install -y --no-install-recommends libimage-exiftool-perl && rm -rf /var/lib/apt/lists/*
+# ExifTool: type detection, RAW previews and all metadata. Pinned in the script, same version as CI; it runs
+# on the image's perl-base. The version shows in /health.
+COPY scripts/install_exiftool.py /tmp/
+RUN python3 -I /tmp/install_exiftool.py && rm /tmp/install_exiftool.py
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev

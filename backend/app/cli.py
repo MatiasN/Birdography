@@ -5,7 +5,7 @@ from getpass import getpass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import derivatives, exif, storage, trash
+from app import derivatives, exif, exiftool, storage, trash
 from app.auth import create_user, restore_user
 from app.config import settings
 from app.db import engine
@@ -22,9 +22,11 @@ def main():
     restore.add_argument("id", type=int)
     purge = commands.add_parser("purge-trash", help="permanently delete what has been in the trash long enough")
     purge.add_argument("--days", type=int, default=settings.trash_days, help="retention in days (default TRASH_DAYS)")
-    commands.add_parser("backfill-files", help="fill hash, size and camera settings for photos migrated from 0.1")
+    commands.add_parser("backfill-files", help="fill hash and size for photos migrated from 0.1")
     derived = commands.add_parser("backfill-derivatives", help="generate missing previews and thumbnails")
     derived.add_argument("--photo", type=int, help="only this photo id")
+    reread = commands.add_parser("reread-metadata", help="read EXIF again with ExifTool and update the catalog")
+    reread.add_argument("--photo", type=int, help="only this photo id")
     args = parser.parse_args()
 
     with Session(engine) as db:
@@ -53,8 +55,10 @@ def main():
             print(", ".join(f"{n} {name}" for name, n in counts.items()) + " purged")
         elif args.command == "backfill-files":
             backfill_files(db)
-        else:  # backfill-derivatives; argparse rejects anything else
+        elif args.command == "backfill-derivatives":
             backfill_derivatives(db, args.photo)
+        else:  # reread-metadata; argparse rejects anything else
+            reread_metadata(db, args.photo)
 
 
 def backfill_derivatives(db: Session, photo_id: int | None = None) -> int:
@@ -72,9 +76,37 @@ def backfill_derivatives(db: Session, photo_id: int | None = None) -> int:
     return updated
 
 
+def reread_metadata(db: Session, photo_id: int | None = None) -> int:
+    """Run ExifTool again on every original and rewrite the metadata columns; what the user set by hand is kept.
+
+    For installs that stored metadata with the old exifread reader, and for photos uploaded while ExifTool was
+    missing. Trashed photos are included so that restoring one brings current metadata back.
+    """
+    query = select(Photo)
+    if photo_id is not None:
+        query = query.where(Photo.id == photo_id)
+    updated = 0
+    for photo in db.scalars(query):
+        original = photo.file("original")
+        if original is None or not storage.path(original.path).exists():
+            print(f"photo {photo.id}: original missing, skipped")
+            continue
+        try:
+            meta = exif.read(storage.path(original.path), position=exif.manual_position(photo))
+        except exiftool.ExifToolError as err:
+            print(f"photo {photo.id}: {err}, skipped")
+            continue
+        exif.apply(photo, meta, keep_manual=True)
+        if original.is_raw:
+            original.width, original.height = exif.raw_dimensions(meta["exif"])
+        updated += 1
+    db.commit()
+    print(f"{updated} photos updated")
+    return updated
+
+
 def backfill_files(db: Session) -> None:
-    """Complete rows created by migration 0006 with a placeholder hash and size, and the camera-setting
-    columns added by migration 0008, which are read from the stored EXIF."""
+    """Complete rows created by migration 0006 with a placeholder hash and size."""
     pending = db.scalars(select(PhotoFile).where(PhotoFile.sha256.like("pending:%"))).all()
     hashed = 0
     for file in pending:
@@ -83,17 +115,8 @@ def backfill_files(db: Session) -> None:
             continue
         file.size_bytes, file.sha256 = storage.digest(file.path)
         hashed += 1
-
-    filled = 0
-    for photo in db.scalars(select(Photo).where(Photo.exif.is_not(None))):
-        meta = exif.parse(photo.exif)
-        missing = [f for f in exif.CAMERA_FIELDS if getattr(photo, f) is None and meta[f] is not None]
-        for field in missing:
-            setattr(photo, field, meta[field])
-        filled += bool(missing)
     db.commit()
     print(f"{hashed} files hashed")
-    print(f"{filled} photos given camera settings")
 
 
 if __name__ == "__main__":  # pragma: no cover

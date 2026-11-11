@@ -93,7 +93,9 @@ class Photo(Base):
     aperture: Mapped[Decimal | None] = mapped_column(Numeric(4, 1))
     focal_length_mm: Mapped[Decimal | None] = mapped_column(Numeric(6, 1))
     exif: Mapped[dict | None] = mapped_column(JSONB)
+    # Where the photo was taken: from the camera's GPS, or chosen on a map by the user (point_manual).
     point: Mapped[WKBElement | None] = mapped_column(Geography("POINT", srid=4326, spatial_index=False))
+    point_manual: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     lat: Mapped[float | None] = column_property(func.ST_Y(cast(point, Geometry(srid=4326))))
     lon: Mapped[float | None] = column_property(func.ST_X(cast(point, Geometry(srid=4326))))
     location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id", ondelete="SET NULL"), index=True)

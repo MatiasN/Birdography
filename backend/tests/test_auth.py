@@ -33,6 +33,15 @@ def test_deleted_account_is_logged_out(client, anon):
     assert anon.post("/auth/login", json={"email": "me@example.com", "password": "secret"}).status_code == 401
 
 
+def test_registration_when_enabled(anon, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "allow_registration", True)
+    credentials = {"email": "new@example.com", "password": "secret"}
+    assert anon.post("/auth/register", json=credentials).status_code == 201
+    assert anon.post("/auth/register", json=credentials).status_code == 409
+
+
 def test_registration_disabled_by_default(anon):
     assert anon.post("/auth/register", json={"email": "new@example.com", "password": "x"}).status_code == 403
 

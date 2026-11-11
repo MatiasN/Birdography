@@ -1,8 +1,8 @@
 """Thin wrapper around the ExifTool command line.
 
-Used for what Pillow cannot do: tell TIFF-based RAW formats apart and pull the embedded JPEG out of a RAW
-file. `metadata` reads every tag of every supported format, for when EXIF extraction moves off exifread. One
-process per call; a persistent `-stay_open` process is a later optimisation if uploads ever queue up.
+Used for what Pillow cannot do: tell TIFF-based RAW formats apart, pull the embedded JPEG out of a RAW file,
+and read metadata from every supported format (`app.exif` builds on `metadata`). One process per call; a
+persistent `-stay_open` process is a later optimisation if uploads ever queue up.
 """
 
 import base64
@@ -40,17 +40,18 @@ def _version(path: str) -> str | None:
 
 
 def file_type(path: Path) -> dict:
-    """`{"file_type": "NEF", "extension": "nef", "mime_type": "image/x-nikon-nef"}`.
+    """`{"file_type": "NEF", "extension": "nef", "mime_type": "image/x-nikon-nef", "model": "NIKON D40"}`.
 
     ExifTool trusts the extension of TIFF-based files (a TIFF named `.nef` is reported as NEF), so call this on
-    a path without extension to get an answer based on content alone.
+    a path without extension to get an answer based on content alone. `model` is the camera model, if any.
     """
-    args = ("-j", "-n", "-FileType", "-FileTypeExtension", "-MIMEType", "--", str(path))
+    args = ("-j", "-n", "-FileType", "-FileTypeExtension", "-MIMEType", "-Model", "--", str(path))
     (row,) = json.loads(_run(*args))
     return {
         "file_type": row.get("FileType"),
         "extension": (row.get("FileTypeExtension") or "").lower() or None,
         "mime_type": row.get("MIMEType"),
+        "model": str(row["Model"]) if row.get("Model") is not None else None,
     }
 
 

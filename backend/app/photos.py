@@ -1,21 +1,22 @@
+import logging
 from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
-from geoalchemy2 import WKTElement
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import derivatives, exif, filetypes, storage
+from app import derivatives, exif, exiftool, filetypes, storage
 from app.auth import CurrentUser
 from app.config import settings
 from app.db import DB
 from app.models import FILE_KINDS, Location, Photo, PhotoFile, PhotoSpecies, Species, User
 from app.storage import MB
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/photos", tags=["photos"])
 
 
@@ -48,6 +49,7 @@ class PhotoOut(BaseModel):
     focal_length_mm: float | None
     lat: float | None
     lon: float | None
+    point_manual: bool
     species_ids: list[int]
     location_id: int | None = Field(validation_alias="active_location_id")
     files: list[FileOut]
@@ -59,6 +61,17 @@ class PhotoUpdate(BaseModel):
     # A naive value is the camera's local time; an offset-aware value also sets taken_offset_minutes.
     # Explicit null reverts to the EXIF date.
     taken_at_local: datetime | None = None
+    # Where the photo was taken, chosen on a map. Both or neither; explicit nulls revert to the camera's GPS.
+    lat: float | None = Field(None, ge=-90, le=90)
+    lon: float | None = Field(None, ge=-180, le=180)
+
+    @model_validator(mode="after")
+    def _coordinates_go_together(self):
+        if ("lat" in self.model_fields_set) != ("lon" in self.model_fields_set) or (self.lat is None) != (
+            self.lon is None
+        ):
+            raise ValueError("lat and lon go together")
+        return self
 
 
 @router.post("", response_model=PhotoOut, status_code=201)
@@ -87,18 +100,19 @@ def upload(file: UploadFile, background: BackgroundTasks, db: DB, user: CurrentU
     name = storage.finalize(temp.name, ftype.ext)
     written = [name]
     try:
-        meta = exif.read(storage.path(name))
-        point = None
-        if meta["lat"] is not None and meta["lon"] is not None:
-            point = WKTElement(f"POINT({meta['lon']} {meta['lat']})", srid=4326)
-        # Pillow cannot open RAW; those get their dimensions once metadata is read with ExifTool.
-        width, height = (None, None) if ftype.is_raw else derivatives.dimensions(storage.path(name))
+        try:
+            meta = exif.read(storage.path(name))
+        except exiftool.ExifToolError as err:
+            # The photo is still worth keeping; `python -m app.cli reread-metadata` fills the gap later.
+            log.warning("%s: metadata not read (%s)", name, err)
+            meta = exif.empty()
+        if ftype.is_raw:  # Pillow cannot open RAW; the camera's tags say how large the image is
+            width, height = exif.raw_dimensions(meta["exif"])
+        else:
+            width, height = derivatives.dimensions(storage.path(name))
 
         photo = Photo(
             owner_id=user.id,
-            **{field: meta[field] for field in (*exif.TAKEN_FIELDS, *exif.CAMERA_FIELDS)},
-            exif=meta["exif"],
-            point=point,
             files=[
                 PhotoFile(
                     kind="original",
@@ -114,6 +128,7 @@ def upload(file: UploadFile, background: BackgroundTasks, db: DB, user: CurrentU
                 )
             ],
         )
+        exif.apply(photo, meta)
         db.add(photo)
         inline = temp.size <= settings.background_derivatives_mb * MB
         if inline:
@@ -184,8 +199,18 @@ def update_photo(photo_id: int, data: PhotoUpdate, db: DB, user: CurrentUser):
             raise HTTPException(400, "Unknown species")
         photo.species_links = [PhotoSpecies(species_id=sid, position=i) for i, sid in enumerate(ids)]
 
+    position = exif.manual_position(photo)
+    if "lat" in changes:
+        exif.set_point(photo, changes["lat"], changes["lon"], manual=True)
+        if changes["lat"] is None:  # back to the camera's GPS
+            meta = exif.parse(photo.exif or {})
+            exif.set_point(photo, meta["lat"], meta["lon"], manual=False)
+        position = (changes["lat"], changes["lon"]) if changes["lat"] is not None else None
+
     if "taken_at_local" in changes:
-        _set_taken_at(photo, changes["taken_at_local"])
+        _set_taken_at(photo, changes["taken_at_local"], position)
+    elif "lat" in changes and not photo.taken_at_manual:
+        exif.set_taken(photo, exif.parse(photo.exif or {}, position))  # the offset may follow the position
 
     db.commit()
     db.refresh(photo)
@@ -216,12 +241,9 @@ def get_file(
     return FileResponse(storage.path(file.path), media_type=file.mime_type)
 
 
-def _set_taken_at(photo: Photo, value: datetime | None) -> None:
-    if value is None:  # back to what the camera recorded
-        meta = exif.parse(photo.exif or {})
-        for field in exif.TAKEN_FIELDS:
-            setattr(photo, field, meta[field])
-        photo.taken_at_manual = False
+def _set_taken_at(photo: Photo, value: datetime | None, position: exif.Position | None) -> None:
+    if value is None:
+        exif.set_taken(photo, exif.parse(photo.exif or {}, position))
         return
     if value.tzinfo is not None:
         photo.taken_offset_minutes = int(value.utcoffset().total_seconds() // 60)

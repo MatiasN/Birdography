@@ -5,7 +5,7 @@
 - Docker with Docker Compose
 - [uv](https://docs.astral.sh/uv/) (Python 3.14 is installed by uv if missing)
 - Node.js 24
-- [ExifTool](https://exiftool.org/) when running the backend or its tests outside Docker (`apt install libimage-exiftool-perl`, `brew install exiftool`). It tells the TIFF-based RAW formats apart and extracts RAW previews; without it those uploads are stored as TIFF without a preview. Tests that need it are skipped when it is missing; `GET /health` reports the version in use.
+- [ExifTool](https://exiftool.org/) when running the backend or its tests outside Docker. CI and the Docker image install the version pinned in `backend/scripts/install_exiftool.py` (currently 13.63); to get the same one locally, run `sudo python3 backend/scripts/install_exiftool.py`, or use `--prefix ~/.local` for a user install. Distribution packages (`apt install libimage-exiftool-perl`, `brew install exiftool`) work too but may be older. To upgrade the pin, change `VERSION` and `SHA256` in that script, using the values from https://exiftool.org/checksums.txt. It reads all photo metadata and extracts RAW previews; without it uploads still succeed but get neither (`reread-metadata` repairs them later). Tests that need it are skipped when it is missing; `GET /health` reports the version in use.
 
 ## Project layout
 
@@ -120,6 +120,22 @@ Run `purge-trash` periodically (cron on the host, for example). Nothing schedule
 
 After upgrading an install that predates `photo_files` (migration 0006), run `python -m app.cli backfill-files` once to compute file hashes and sizes for existing photos.
 
+## Metadata
+
+Date, camera settings and GPS are read from every upload with ExifTool and the full tag set is kept in `photos.exif`. To read them again, for example after upgrading from a version that used `exifread` (different tag names, nothing from CR3), for photos uploaded while ExifTool was missing, or after an ExifTool upgrade:
+
+```bash
+python -m app.cli reread-metadata [--photo ID]
+```
+
+It rewrites the metadata columns from the stored originals, and the width and height of RAW originals, keeps dates and positions the user set by hand and skips photos whose original is missing.
+
+RAW width and height are the visible image, as the camera's own JPEG would be, not the sensor size with its margins: they come from `DefaultCropSize` (DNG, newer ARW), Nikon's `CropArea`, the EXIF image size, and only then ExifTool's `ImageSize`. Other formats get their dimensions from Pillow.
+
+### Time zone of the taken date
+
+`taken_offset_minutes` is the camera's `OffsetTimeOriginal` when it records one (bodies from about 2019 on). Otherwise it is the offset of the time zone at the photo's position on that date, looked up with tzfpy and `zoneinfo`; without a position it stays null and `taken_at` reads the local time as UTC. The position is the camera's GPS, or a spot the user chose on the map (`PATCH /photos/{id}` with `lat` and `lon`, both or neither; nulls go back to the camera's GPS; `point_manual` in the response tells which). A date set by the user is never touched by a position change; reverting it (`taken_at_local: null`) derives the offset again from the current position.
+
 ## Migrations
 
 Migrations run automatically when the backend container starts. To create one after changing `app/models.py`:
@@ -147,9 +163,12 @@ Backend tests and `alembic check` read the database credentials from `.env` (see
 docker compose up -d db
 cd backend
 uv run pytest
+uv run pytest --cov      # with coverage; CI requires 100% (lines and branches)
 ```
 
-Tests marked `exiftool` are skipped when ExifTool is not installed. CI installs it and runs everything.
+Tests marked `exiftool` are skipped when ExifTool is not installed, so coverage falls short locally without it. CI installs it and runs everything.
+
+RAW handling is tested against real camera files (NEF, CR3, ARW, DNG) in `backend/tests/fixtures/raw/`, shrunk to under 2.1 MB each by dropping their sensor data. [Its README](backend/tests/fixtures/raw/README.md) lists the sources and explains how to regenerate the files or add a camera.
 
 ## Code style
 
@@ -158,4 +177,4 @@ cd backend && uv run ruff check --fix . && uv run ruff format .
 cd frontend && npm run format
 ```
 
-CI runs lint, format checks, backend tests, `alembic check` and the frontend build on every push and pull request.
+CI runs lint, format checks, backend tests with the coverage gate, `alembic check` and the frontend build on every push and pull request.

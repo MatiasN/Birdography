@@ -4,13 +4,12 @@ import io
 import os
 import time
 
-import exifread
 import pytest
 from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import derivatives, storage
+from app import derivatives, exiftool, storage
 from app.cli import backfill_derivatives
 from app.config import settings
 from app.db import engine
@@ -29,8 +28,10 @@ def kinds(photo):
     return {f["kind"]: f for f in photo["files"]}
 
 
-def exif_tags(data: bytes) -> dict:
-    return exifread.process_file(io.BytesIO(data), details=False)
+def exif_tags(tmp_path, data: bytes) -> dict:
+    file = tmp_path / "served.jpg"
+    file.write_bytes(data)
+    return exiftool.metadata(file)
 
 
 @pytest.mark.parametrize(
@@ -82,7 +83,8 @@ def test_limits_depend_on_type(client, monkeypatch):
     assert len(stored()) == 1
 
 
-def test_thumbnail_is_small_upright_and_stripped(client):
+@pytest.mark.exiftool
+def test_thumbnail_is_small_upright_and_stripped(client, tmp_path):
     exif = Image.Exif()
     exif[0x0112] = 6  # rotate 90° clockwise to display
     gps = exif.get_ifd(0x8825)
@@ -99,8 +101,8 @@ def test_thumbnail_is_small_upright_and_stripped(client):
     assert served.headers["content-type"] == "image/jpeg"
     with Image.open(io.BytesIO(served.content)) as image:
         assert image.size == (200, 400)
-    assert not any(tag.startswith("GPS") for tag in exif_tags(served.content))
-    assert any(tag.startswith("GPS") for tag in exif_tags(client.get(files["original"]["url"]).content))
+    assert not any(tag.startswith("GPS:") for tag in exif_tags(tmp_path, served.content))
+    assert any(tag.startswith("GPS:") for tag in exif_tags(tmp_path, client.get(files["original"]["url"]).content))
 
 
 @pytest.mark.parametrize("fmt", ["HEIF", "TIFF"])

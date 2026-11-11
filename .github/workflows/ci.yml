@@ -34,12 +34,13 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.14"
-      - run: sudo apt-get update && sudo apt-get install -y libimage-exiftool-perl
+      # Pinned release, the same as in the Docker image; the Ubuntu package lags behind.
+      - run: sudo python3 -I scripts/install_exiftool.py
       - run: exiftool -ver
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run pytest
+      - run: uv run pytest --cov
       - run: uv run alembic upgrade head
       - run: uv run alembic check
 

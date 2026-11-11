@@ -5,6 +5,7 @@ Self-hosted birding photography catalog with species information and map-based n
 ## Features
 
 - **Photo catalog**: upload JPEG, PNG, TIFF, HEIC, WebP or RAW photos (NEF, CR2, CR3, ARW, DNG, RAF, ORF, RW2, PEF), with date, camera settings and GPS read automatically from EXIF. File types are detected from content; RAW and HEIC photos get a browser-viewable preview, and every photo a thumbnail. Previews and thumbnails carry no GPS or other metadata. Upload limits are 40 MB, 70 MB for RAW, both configurable. Deleted items stay in a trash for 30 days.
+- **Where and when**: the time zone of each photo comes from the camera, or from the time zone at its position when the camera records none; photos without GPS can be placed on a map by hand, and that spot sets the time zone too.
 - **Map**: browse every spot you've photographed and filter species by location.
 - **Multi-language species**: English, Portuguese and scientific names.
 - **Gap tracking**: see which species you still need to photograph in a region.
@@ -48,6 +49,11 @@ See [ROADMAP.md](ROADMAP.md).
 ## Contributing
 
 Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Credits
+
+- Time zones from positions: [tzfpy](https://github.com/ringsaturn/tzfpy) (MIT), whose zone boundaries come from [timezone-boundary-builder](https://github.com/evansiroky/timezone-boundary-builder), built from [OpenStreetMap](https://www.openstreetmap.org/copyright) data © OpenStreetMap contributors, licensed under the [ODbL](https://opendatacommons.org/licenses/odbl/).
+- RAW test fixtures: camera samples from [raw.pixls.us](https://raw.pixls.us/), dedicated to the public domain under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). Contributors are listed on each sample's page; the files used are in [backend/tests/fixtures/raw](backend/tests/fixtures/raw/README.md).
 
 ## License
 
