@@ -53,11 +53,6 @@ def test_upload_records_original_file(client):
     assert file["url"] == f"/photos/{photo['id']}/file?kind=original"
 
 
-def test_raw_original_has_no_dimensions(client):
-    (file,) = upload(client, b"not really a NEF", name="DSC_0001.NEF").json()["files"]
-    assert (file["format"], file["is_raw"], file["width"], file["height"]) == ("nef", True, None, None)
-
-
 def test_duplicate_upload_is_rejected_for_everyone(client):
     data = make_jpeg()
     assert upload(client, data).status_code == 201
@@ -69,8 +64,14 @@ def test_duplicate_upload_is_rejected_for_everyone(client):
     assert len(stored()) == 1
 
 
+def test_type_comes_from_content_not_extension(client):
+    photo = upload(client, make_jpeg(), name="DSC_0001.NEF").json()
+    assert photo["files"][0]["is_raw"] is False
+    assert photo["files"][0]["format"] == "jpeg"
+
+
 def test_rejects_unsupported_type(client):
-    assert upload(client, b"<html>", name="evil.html").status_code == 400
+    assert upload(client, b"<html>", name="evil.jpg").status_code == 415
     assert stored() == []
 
 
