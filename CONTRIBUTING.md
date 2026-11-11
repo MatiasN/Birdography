@@ -92,7 +92,8 @@ In `.env` or the environment. A test (`tests/test_config.py`) fails when a backe
 | `POSTGRES_HOST` | `localhost` | database host when the backend runs outside Docker (always `db` inside) |
 | `POSTGRES_PORT` | 5432 | database port outside Docker; the dev override also publishes the database there |
 | `UPLOAD_DIR` | `data/photos` | photo storage. In Docker, the host directory mounted at `/data/photos` (default `./data/photos`), owned by `PUID:PGID` automatically |
-| `SESSION_DAYS` | 30 | how long a login lasts |
+| `SESSION_DAYS` | 30 | a session ends after this many days without a visit (browser sessions renew daily while in use) |
+| `SESSION_MAX_DAYS` | 90 | hard cap: a session never outlives this, counted from the login |
 | `SECURE_COOKIES` | `false` | send the session cookie only over HTTPS; set `true` when serving through an HTTPS proxy |
 | `ALLOW_REGISTRATION` | `false` | enable `POST /auth/register` |
 | `MAX_UPLOAD_MB` | 40 | limit for JPEG, PNG, TIFF, HEIC, WebP |
@@ -170,7 +171,7 @@ cd backend && uv run python -m app.cli create-user you@example.com
 
 Set `ALLOW_REGISTRATION=true` to enable `POST /auth/register`. New passwords need at least 10 characters (existing ones keep working).
 
-Sessions are signed tokens, sent as an HTTP-only cookie or, from `POST /auth/login`'s `access_token`, as a bearer token. A session lasts `SESSION_DAYS` days. `POST /auth/password` (`current_password`, `new_password`) changes the password and ends every other session of the account; the calling browser gets a new cookie, bearer clients log in again. There is no email flow, so a forgotten password is reset from the CLI, which also ends all sessions:
+Sessions are signed tokens, sent as an HTTP-only cookie or, from `POST /auth/login`'s `access_token`, as a bearer token. Browser sessions slide: the cookie is re-issued with a fresh `SESSION_DAYS` expiry about once a day while it is used, up to `SESSION_MAX_DAYS` after the login, so an active user stays logged in and an idle or stolen cookie still dies. Bearer tokens keep their original expiry. `POST /auth/login` and `GET /auth/me` return `expires_at`; the frontend uses it to return to the login page when the session ends. `POST /auth/password` (`current_password`, `new_password`) changes the password and ends every other session of the account; the calling browser gets a new cookie, bearer clients log in again. There is no email flow, so a forgotten password is reset from the CLI, which also ends all sessions:
 
 ```bash
 python -m app.cli set-password you@example.com

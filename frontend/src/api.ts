@@ -29,7 +29,11 @@ export type Photo = {
   files: PhotoFile[];
 };
 
-export type User = { id: number; email: string };
+export type User = { id: number; email: string; expires_at: string };
+
+/** Fired on any 401 outside the login and password forms: the session expired or was ended elsewhere. */
+export const SESSION_EXPIRED = "session-expired";
+const HANDLE_OWN_401 = ["/auth/login", "/auth/password"];
 
 export type Health = {
   status: string;
@@ -82,6 +86,9 @@ function errorMessage(detail: unknown): string | null {
 async function request(path: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(`/api${path}`, init);
   if (!response.ok) {
+    if (response.status === 401 && !HANDLE_OWN_401.includes(path)) {
+      window.dispatchEvent(new Event(SESSION_EXPIRED));
+    }
     const body: { detail?: unknown } = await response.json().catch(() => ({}));
     throw new ApiError(response.status, errorMessage(body.detail) ?? response.statusText);
   }

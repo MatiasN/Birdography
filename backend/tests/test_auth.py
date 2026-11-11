@@ -1,3 +1,5 @@
+from datetime import UTC, datetime, timedelta
+
 import jwt
 import pytest
 from sqlalchemy import update
@@ -181,3 +183,86 @@ def test_login_blocked_after_twenty_failures_per_address(client, anon):
 def test_unknown_client_address():
     """Without a peer address (unix sockets) every request shares one bucket."""
     assert auth.client_ip(Request({"type": "http", "client": None, "headers": []})) == "unknown"
+
+
+# Sliding sessions
+
+
+def claims_of(token: str) -> dict:
+    return jwt.decode(token, settings.secret_key, algorithms=["HS256"])
+
+
+def make_token(user_id: int, *, age_days: float, session_age_days: float, ver: int = 0) -> str:
+    """A cookie as the backend would have issued it `age_days` ago, `session_age_days` after its login."""
+    now = datetime.now(UTC).timestamp()
+    issued = now - age_days * 86400
+    auth_time = now - session_age_days * 86400
+    expires = min(issued + settings.session_days * 86400, auth_time + settings.session_max_days * 86400)
+    claims = {"sub": str(user_id), "ver": ver, "iat": int(issued), "auth_time": int(auth_time), "exp": int(expires)}
+    return jwt.encode(claims, settings.secret_key, algorithm="HS256")
+
+
+def test_login_reports_when_the_session_ends(client, anon):
+    body = attempt(anon, "secret").json()
+    expires = datetime.fromisoformat(body["expires_at"])
+    assert abs((expires - datetime.now(UTC)) - timedelta(days=settings.session_days)) < timedelta(minutes=1)
+    me = anon.get("/auth/me", headers=bearer(body["access_token"])).json()
+    assert me["expires_at"] == body["expires_at"]
+
+
+def test_fresh_cookie_is_not_reissued(client):
+    response = client.get("/auth/me")
+    assert response.status_code == 200
+    assert "set-cookie" not in response.headers
+
+
+def test_old_cookie_slides(client, anon):
+    user_id = client.get("/auth/me").json()["id"]
+    anon.cookies.set(auth.COOKIE, make_token(user_id, age_days=2, session_age_days=10))
+    response = anon.get("/auth/me")
+    assert response.status_code == 200
+    fresh = claims_of(response.cookies[auth.COOKIE])
+    now = datetime.now(UTC).timestamp()
+    assert abs(fresh["exp"] - (now + settings.session_days * 86400)) < 60  # a full window again
+    assert abs(fresh["auth_time"] - (now - 10 * 86400)) < 60  # the login moment is kept
+    assert response.json()["expires_at"] == datetime.fromtimestamp(fresh["exp"], UTC).isoformat().replace("+00:00", "Z")
+
+
+def test_renewal_stops_at_the_hard_cap(client, anon):
+    user_id = client.get("/auth/me").json()["id"]
+    # Logged in 61 days ago: a full window (30) would pass the cap (90), so the renewed expiry lands on it.
+    anon.cookies.set(auth.COOKIE, make_token(user_id, age_days=2, session_age_days=61))
+    first = anon.get("/auth/me")
+    capped = claims_of(first.cookies[auth.COOKIE])
+    assert abs(capped["exp"] - (capped["auth_time"] + settings.session_max_days * 86400)) < 60
+    assert first.json()["expires_at"].startswith(str(datetime.fromtimestamp(capped["exp"], UTC).year))
+    # Already at the cap: nothing to extend, so no new cookie is sent.
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    other = TestClient(app)
+    other.cookies.set(auth.COOKIE, make_token(user_id, age_days=29, session_age_days=89))
+    second = other.get("/auth/me")
+    assert second.status_code == 200
+    assert "set-cookie" not in second.headers
+
+
+def test_bearer_tokens_do_not_slide(client, anon):
+    user_id = client.get("/auth/me").json()["id"]
+    token = make_token(user_id, age_days=2, session_age_days=10)
+    response = anon.get("/auth/me", headers=bearer(token))
+    assert response.status_code == 200
+    assert "set-cookie" not in response.headers
+
+
+def test_tokens_from_before_sliding_sessions_keep_their_expiry(client, anon):
+    """No `iat`/`auth_time` (issued before this feature): accepted, but never renewed."""
+    user_id = client.get("/auth/me").json()["id"]
+    expires = int(datetime.now(UTC).timestamp()) + 5 * 86400
+    old = jwt.encode({"sub": str(user_id), "ver": 0, "exp": expires}, settings.secret_key, algorithm="HS256")
+    anon.cookies.set(auth.COOKIE, old)
+    response = anon.get("/auth/me")
+    assert response.status_code == 200
+    assert "set-cookie" not in response.headers
+    assert response.json()["expires_at"] == datetime.fromtimestamp(expires, UTC).isoformat().replace("+00:00", "Z")

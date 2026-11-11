@@ -1,5 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
-import { api, ApiError, hasFile, json, offsetLabel, photoUrl, position, send, sizeProblem, takenDate } from "./api";
+import {
+  api,
+  ApiError,
+  hasFile,
+  json,
+  offsetLabel,
+  photoUrl,
+  position,
+  send,
+  SESSION_EXPIRED,
+  sizeProblem,
+  takenDate,
+} from "./api";
 import { makePhoto, me, mockApi } from "./test/api";
 
 const MB = 1024 * 1024;
@@ -96,6 +108,29 @@ describe("api", () => {
     const error = await api("/auth/login", { method: "POST" }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toMatchObject({ status: 401, message });
+  });
+
+  it.each([
+    ["/photos", true],
+    ["/auth/me", true],
+    ["/auth/login", false],
+    ["/auth/password", false],
+  ])("fires session-expired on a 401 from %s: %s", async (path, fired) => {
+    mockApi({ [`GET ${path}`]: { status: 401, body: { detail: "Not authenticated" } } });
+    const seen = vi.fn<() => void>();
+    window.addEventListener(SESSION_EXPIRED, seen);
+    await expect(api(path)).rejects.toMatchObject({ status: 401 });
+    window.removeEventListener(SESSION_EXPIRED, seen);
+    expect(seen.mock.calls.length > 0).toBe(fired);
+  });
+
+  it("does not fire session-expired on other failures", async () => {
+    mockApi({ "GET /photos": { status: 500, body: {} } });
+    const seen = vi.fn<() => void>();
+    window.addEventListener(SESSION_EXPIRED, seen);
+    await expect(api("/photos")).rejects.toMatchObject({ status: 500 });
+    window.removeEventListener(SESSION_EXPIRED, seen);
+    expect(seen).not.toHaveBeenCalled();
   });
 
   it("falls back to the status text when the error body isn't JSON", async () => {

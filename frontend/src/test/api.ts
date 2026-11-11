@@ -70,7 +70,12 @@ export function makePhoto(overrides: Partial<Photo> = {}): Photo {
   };
 }
 
-/** /auth/me's shape. */
-export const me = (overrides: Partial<User> = {}) => ({ id: 1, email: "me@example.com", ...overrides });
+/** /auth/me's shape; expires far enough out that Layout's timer never fires during a test. */
+export const me = (overrides: Partial<User> = {}) => ({
+  id: 1,
+  email: "me@example.com",
+  expires_at: new Date(Date.now() + 86400_000).toISOString(),
+  ...overrides,
+});
 
 export const health = { status: "ok", postgis: "3.5", exiftool: "13.63", limits: { upload_mb: 40, raw_upload_mb: 70 } };

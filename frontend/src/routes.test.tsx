@@ -27,6 +27,12 @@ describe("routes", () => {
     expect(screen.getByText("me@example.com")).toBeInTheDocument();
   });
 
+  it("/account is the account page, inside the layout", async () => {
+    mockApi({ "GET /auth/me": { body: me() } });
+    open("/account");
+    expect(await screen.findByRole("heading", { name: "Change password" })).toBeInTheDocument();
+  });
+
   it("/map is the map, inside the layout", async () => {
     mockApi({
       "GET /auth/me": { body: me() },

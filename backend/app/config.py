@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     upload_dir: str = "data/photos"
     secret_key: str
     session_days: int = 30
+    session_max_days: int = 90
     secure_cookies: bool = False
     allow_registration: bool = False
     trash_days: int = 30

@@ -16,6 +16,9 @@ from app.models import User
 from app.throttle import Throttle
 
 COOKIE = "session"
+# Browser sessions slide: a cookie older than this is re-issued with a fresh expiry on the next request, so a
+# session ends only after SESSION_DAYS without a visit, or SESSION_MAX_DAYS after the password was last typed.
+RENEW_AFTER = timedelta(days=1)
 MIN_PASSWORD = 10
 MAX_PASSWORD = 1024  # hashing is deliberately slow; don't let a request make it arbitrarily slower
 passwords = PasswordHash.recommended()
@@ -49,6 +52,16 @@ class UserOut(BaseModel):
 
     id: int
     email: str
+
+
+class SessionOut(UserOut):
+    expires_at: datetime  # when this session ends; moves forward as a browser session is renewed
+
+
+class LoginOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_at: datetime
 
 
 def password_problem(password: str) -> str | None:
@@ -87,6 +100,7 @@ def restore_user(db: Session, email: str) -> User:
 
 def get_current_user(
     request: Request,
+    response: Response,
     db: DB,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
 ) -> User:
@@ -100,7 +114,34 @@ def get_current_user(
     user = db.get(User, user_id)
     if not user or user.deleted_at or version != user.session_version:
         raise HTTPException(401, "Not authenticated")
+    request.state.session_expires_at = _renew(response, user, claims, is_cookie=credentials is None)
     return user
+
+
+def _ts(value: float) -> datetime:
+    """A claim's timestamp as a datetime; values beyond the calendar (hand-made tokens) clamp to the extremes."""
+    try:
+        return datetime.fromtimestamp(value, UTC)
+    except OverflowError, OSError, ValueError:
+        return (datetime.max if value > 0 else datetime.min).replace(tzinfo=UTC)
+
+
+def _renew(response: Response, user: User, claims: dict, is_cookie: bool) -> datetime:
+    """Slide the session window: re-issue a cookie once a day while it is used. Returns when the session ends.
+
+    Bearer tokens are not renewed (the client never sees the new value), and neither are tokens from before this
+    feature (no `auth_time`): they keep their original expiry until the next login."""
+    expires = _ts(claims["exp"])
+    issued, auth_time = claims.get("iat"), claims.get("auth_time")
+    if not (is_cookie and issued and auth_time):
+        return expires
+    now = datetime.now(UTC)
+    if now - _ts(issued) < RENEW_AFTER:
+        return expires
+    if _expiry(now, _ts(auth_time)) <= expires:  # already at the SESSION_MAX_DAYS cap: nothing would change
+        return expires
+    _, renewed = start_session(response, user, auth_time=_ts(auth_time))
+    return renewed
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
@@ -123,16 +164,29 @@ def record_failure(email: str, ip: str) -> None:
     failures_by_ip.fail(ip)
 
 
-def start_session(response: Response, user: User) -> str:
-    """Issue a session token and cookie, carrying the account's session version."""
-    expires = datetime.now(UTC) + timedelta(days=settings.session_days)
-    claims = {"sub": str(user.id), "ver": user.session_version, "exp": expires}
+def _expiry(now: datetime, auth_time: datetime) -> datetime:
+    """SESSION_DAYS from now, but never more than SESSION_MAX_DAYS after the password was last typed."""
+    return min(now + timedelta(days=settings.session_days), auth_time + timedelta(days=settings.session_max_days))
+
+
+def start_session(response: Response, user: User, auth_time: datetime | None = None) -> tuple[str, datetime]:
+    """Issue a session token and cookie. `auth_time` stays the moment the password was typed, across renewals."""
+    now = datetime.now(UTC).replace(microsecond=0)  # token timestamps are whole seconds
+    auth_time = auth_time or now
+    expires = _expiry(now, auth_time)
+    claims = {
+        "sub": str(user.id),
+        "ver": user.session_version,
+        "iat": now,
+        "auth_time": int(auth_time.timestamp()),
+        "exp": expires,
+    }
     token = jwt.encode(claims, settings.secret_key, algorithm="HS256")
     response.set_cookie(COOKIE, token, expires=expires, httponly=True, samesite="lax", secure=settings.secure_cookies)
-    return token
+    return token, expires
 
 
-@router.post("/login")
+@router.post("/login", response_model=LoginOut)
 def login(data: Credentials, request: Request, response: Response, db: DB):
     email, ip = data.email.lower(), client_ip(request)
     check_throttle(email, ip)
@@ -142,8 +196,8 @@ def login(data: Credentials, request: Request, response: Response, db: DB):
         raise HTTPException(401, "Invalid email or password")
 
     failures_by_email.reset(email)
-    token = start_session(response, user)
-    return {"access_token": token, "token_type": "bearer"}
+    token, expires = start_session(response, user)
+    return LoginOut(access_token=token, expires_at=expires)
 
 
 @router.post("/logout", status_code=204)
@@ -164,9 +218,9 @@ def change_password(data: PasswordChange, user: CurrentUser, request: Request, r
     start_session(response, user)
 
 
-@router.get("/me", response_model=UserOut)
-def me(user: CurrentUser):
-    return user
+@router.get("/me", response_model=SessionOut)
+def me(user: CurrentUser, request: Request):
+    return SessionOut(id=user.id, email=user.email, expires_at=request.state.session_expires_at)
 
 
 @router.delete("/me", status_code=204)

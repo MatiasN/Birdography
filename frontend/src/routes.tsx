@@ -1,5 +1,6 @@
 import type { RouteObject } from "react-router-dom";
 import Layout from "./Layout";
+import Account from "./pages/Account";
 import Login from "./pages/Login";
 import MapPage from "./pages/MapPage";
 import Photos from "./pages/Photos";
@@ -11,6 +12,7 @@ export const routes: RouteObject[] = [
     children: [
       { path: "/", element: <Photos /> },
       { path: "/map", element: <MapPage /> },
+      { path: "/account", element: <Account /> },
     ],
   },
 ];

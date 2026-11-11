@@ -1,9 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import Layout from "./Layout";
-import { me, mockApi } from "./test/api";
+import { me, mockApi, type Routes } from "./test/api";
 
 function renderLayout() {
   const router = createMemoryRouter(
@@ -32,7 +32,41 @@ describe("Layout", () => {
     const router = renderLayout();
     expect(screen.queryByText("Photos page")).not.toBeInTheDocument();
     expect(await screen.findByText("Login page")).toBeInTheDocument();
-    expect(router.state.location.pathname).toBe("/login");
+    expect(router.state.location.search).toBe("?expired=1&next=%2F");
+  });
+
+  it("returns to the login page when any request answers 401, remembering where the user was", async () => {
+    mockApi({ "GET /auth/me": { body: me() } });
+    const router = renderLayout();
+    await screen.findByText("Photos page");
+    act(() => {
+      window.dispatchEvent(new Event("session-expired")); // as api() fires on any 401
+    });
+    expect(await screen.findByText("Login page")).toBeInTheDocument();
+    expect(router.state.location.search).toBe("?expired=1&next=%2F");
+  });
+
+  it("checks the session again when it is due to end", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const routes: Routes = { "GET /auth/me": { body: me({ expires_at: new Date(Date.now() + 5000).toISOString() }) } };
+    const calls = mockApi(routes);
+    renderLayout();
+    await screen.findByText("Photos page");
+    // Renewed meanwhile: the re-check brings a later expires_at and the layout stays.
+    routes["GET /auth/me"] = { body: me({ expires_at: new Date(Date.now() + 90_000_000_000).toISOString() }) };
+    await act(() => vi.advanceTimersByTimeAsync(5000));
+    expect(screen.getByText("Photos page")).toBeInTheDocument();
+    await waitFor(() => expect(calls.filter((c) => c.path === "/auth/me")).toHaveLength(2));
+    // The second timer sits beyond setTimeout's 2^31-1 cap; when it fires early, the session has really ended.
+    routes["GET /auth/me"] = { status: 401, body: { detail: "Not authenticated" } };
+    await act(() => vi.advanceTimersByTimeAsync(2 ** 31));
+    expect(await screen.findByText("Login page")).toBeInTheDocument();
+  });
+
+  it("links the email to the account page", async () => {
+    mockApi({ "GET /auth/me": { body: me() } });
+    renderLayout();
+    expect(await screen.findByRole("link", { name: "me@example.com" })).toHaveAttribute("href", "/account");
   });
 
   it("logs out", async () => {
