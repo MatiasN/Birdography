@@ -54,8 +54,15 @@ class PhotoOut(BaseModel):
     id: int
     uploaded_at: datetime
     taken_at: datetime | None
+    taken_at_local: datetime | None
+    taken_offset_minutes: int | None
+    taken_at_manual: bool
     camera: str | None
     lens: str | None
+    iso: int | None
+    shutter_seconds: float | None
+    aperture: float | None
+    focal_length_mm: float | None
     lat: float | None
     lon: float | None
     species_ids: list[int]
@@ -66,6 +73,9 @@ class PhotoOut(BaseModel):
 class PhotoUpdate(BaseModel):
     species_ids: list[int] | None = None
     location_id: int | None = None
+    # A naive value is the camera's local time; an offset-aware value also sets taken_offset_minutes.
+    # Explicit null reverts to the EXIF date.
+    taken_at_local: datetime | None = None
 
 
 @router.post("", response_model=PhotoOut, status_code=201)
@@ -89,9 +99,7 @@ def upload(file: UploadFile, db: DB, user: CurrentUser):
 
         photo = Photo(
             owner_id=user.id,
-            taken_at=meta["taken_at"],
-            camera=meta["camera"],
-            lens=meta["lens"],
+            **{field: meta[field] for field in (*exif.TAKEN_FIELDS, *exif.CAMERA_FIELDS)},
             exif=meta["exif"],
             point=point,
             files=[
@@ -170,6 +178,9 @@ def update_photo(photo_id: int, data: PhotoUpdate, db: DB, user: CurrentUser):
             raise HTTPException(400, "Unknown species")
         photo.species_links = [PhotoSpecies(species_id=sid, position=i) for i, sid in enumerate(ids)]
 
+    if "taken_at_local" in changes:
+        _set_taken_at(photo, changes["taken_at_local"])
+
     db.commit()
     db.refresh(photo)
     return photo
@@ -189,6 +200,21 @@ def get_file(
     if not file or not storage.path(file.path).exists():
         raise HTTPException(404, "File missing")
     return FileResponse(storage.path(file.path), media_type=file.mime_type)
+
+
+def _set_taken_at(photo: Photo, value: datetime | None) -> None:
+    if value is None:  # back to what the camera recorded
+        meta = exif.parse(photo.exif or {})
+        for field in exif.TAKEN_FIELDS:
+            setattr(photo, field, meta[field])
+        photo.taken_at_manual = False
+        return
+    if value.tzinfo is not None:
+        photo.taken_offset_minutes = int(value.utcoffset().total_seconds() // 60)
+        value = value.replace(tzinfo=None)
+    photo.taken_at_local = value
+    photo.taken_at = exif.instant(value, photo.taken_offset_minutes)
+    photo.taken_at_manual = True
 
 
 def _dimensions(path: Path) -> tuple[int | None, int | None]:

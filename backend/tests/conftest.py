@@ -11,6 +11,7 @@ from alembic import command  # noqa: E402
 from alembic.config import Config  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from PIL import Image  # noqa: E402
+from PIL.TiffImagePlugin import IFDRational  # noqa: E402
 from sqlalchemy import create_engine, make_url, text  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
@@ -75,15 +76,23 @@ def stored() -> list[str]:
     return sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
 
 
-def make_jpeg(camera=None, taken_at=None, lat=None, lon=None, unique=True) -> bytes:
+def make_jpeg(camera=None, taken_at=None, offset=None, lat=None, lon=None, settings=None, unique=True) -> bytes:
     """A tiny JPEG with the given EXIF. Unique by default, since identical uploads are rejected."""
     exif = Image.Exif()
     if unique:
         exif[0x010E] = f"test image {next(_counter)}"  # ImageDescription
     if camera:
         exif[0x0110] = camera
+    ifd = exif.get_ifd(0x8769)
     if taken_at:
-        exif.get_ifd(0x8769)[0x9003] = taken_at
+        ifd[0x9003] = taken_at
+    if offset:
+        ifd[0x9011] = offset
+    if settings:  # rationals, as cameras write them: exposure "1/500", f-number "28/5"
+        ifd[0x8827] = settings["iso"]
+        ifd[0x829A] = IFDRational(*settings["exposure"])
+        ifd[0x829D] = IFDRational(*settings["fnumber"])
+        ifd[0x920A] = IFDRational(*settings["focal_length"])
     if lat is not None and lon is not None:
         gps = exif.get_ifd(0x8825)
         gps[1], gps[2] = ("N" if lat >= 0 else "S"), (abs(lat), 0.0, 0.0)

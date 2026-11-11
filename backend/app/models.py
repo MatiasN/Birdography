@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 
 from geoalchemy2 import Geography, Geometry, WKBElement
 from sqlalchemy import (
@@ -9,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     MetaData,
+    Numeric,
     SmallInteger,
     String,
     UniqueConstraint,
@@ -40,6 +42,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320), unique=True)
     password_hash: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Species(Base):
@@ -50,6 +53,7 @@ class Species(Base):
     name_en: Mapped[str | None] = mapped_column(String(200))
     name_pt: Mapped[str | None] = mapped_column(String(200))
     family: Mapped[str | None] = mapped_column(String(200))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Location(Base):
@@ -57,11 +61,12 @@ class Location(Base):
     __table_args__ = (Index("ix_locations_point", "point", postgresql_using="gist"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(200))
     point: Mapped[WKBElement] = mapped_column(Geography("POINT", srid=4326, spatial_index=False))
     lat: Mapped[float] = column_property(func.ST_Y(cast(point, Geometry(srid=4326))))
     lon: Mapped[float] = column_property(func.ST_X(cast(point, Geometry(srid=4326))))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Photo(Base):
@@ -69,16 +74,26 @@ class Photo(Base):
     __table_args__ = (Index("ix_photos_point", "point", postgresql_using="gist"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    taken_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Best-effort instant: local time + offset when known, otherwise local time read as UTC.
+    taken_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    # What the camera recorded, or what the user set; this is what the catalog shows and filters on.
+    taken_at_local: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
+    taken_offset_minutes: Mapped[int | None] = mapped_column(SmallInteger)
+    taken_at_manual: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     camera: Mapped[str | None] = mapped_column(String(200))
     lens: Mapped[str | None] = mapped_column(String(200))
+    iso: Mapped[int | None]
+    shutter_seconds: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
+    aperture: Mapped[Decimal | None] = mapped_column(Numeric(4, 1))
+    focal_length_mm: Mapped[Decimal | None] = mapped_column(Numeric(6, 1))
     exif: Mapped[dict | None] = mapped_column(JSONB)
     point: Mapped[WKBElement | None] = mapped_column(Geography("POINT", srid=4326, spatial_index=False))
     lat: Mapped[float | None] = column_property(func.ST_Y(cast(point, Geometry(srid=4326))))
     lon: Mapped[float | None] = column_property(func.ST_X(cast(point, Geometry(srid=4326))))
-    location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"), index=True)
+    location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id", ondelete="SET NULL"), index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
     location: Mapped[Location | None] = relationship()
     files: Mapped[list[PhotoFile]] = relationship(

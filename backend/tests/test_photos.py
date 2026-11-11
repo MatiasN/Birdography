@@ -9,19 +9,35 @@ def upload(client, data=None, name="bird.jpg"):
 
 
 def test_upload_reads_exif(client):
-    data = make_jpeg(camera="Canon EOS R5", taken_at="2026:05:14 07:32:10", lat=38.5, lon=-9.25)
+    data = make_jpeg(
+        camera="Canon EOS R5",
+        taken_at="2026:05:14 07:32:10",
+        offset="+01:00",
+        lat=38.5,
+        lon=-9.25,
+        settings={"iso": 800, "exposure": (1, 500), "fnumber": (28, 5), "focal_length": (600, 1)},
+    )
     photo = upload(client, data).json()
 
     assert photo["camera"] == "Canon EOS R5"
-    assert photo["taken_at"].startswith("2026-05-14T07:32:10")
+    assert photo["taken_at_local"] == "2026-05-14T07:32:10"
+    assert photo["taken_offset_minutes"] == 60
+    assert photo["taken_at"] == "2026-05-14T06:32:10Z"
+    assert photo["taken_at_manual"] is False
     assert photo["lat"] == pytest.approx(38.5)
     assert photo["lon"] == pytest.approx(-9.25)
+    assert photo["iso"] == 800
+    assert photo["shutter_seconds"] == pytest.approx(0.002)
+    assert photo["aperture"] == pytest.approx(5.6)
+    assert photo["focal_length_mm"] == pytest.approx(600)
 
 
 def test_upload_without_exif(client):
     photo = upload(client).json()
     assert photo["taken_at"] is None
+    assert photo["taken_at_local"] is None
     assert photo["lat"] is None
+    assert photo["iso"] is None
 
 
 def test_upload_records_original_file(client):
@@ -103,6 +119,23 @@ def test_assign_several_species(client):
 def test_assign_unknown_species(client):
     photo = upload(client).json()
     assert client.patch(f"/photos/{photo['id']}", json={"species_ids": [999]}).status_code == 400
+
+
+def test_user_overrides_taken_date(client):
+    photo = upload(client, make_jpeg(taken_at="2020:01:01 00:00:00")).json()
+
+    fixed = client.patch(f"/photos/{photo['id']}", json={"taken_at_local": "2026-05-14T07:32:10"}).json()
+    assert fixed["taken_at_local"] == "2026-05-14T07:32:10"
+    assert fixed["taken_at"] == "2026-05-14T07:32:10Z"
+    assert fixed["taken_at_manual"] is True
+
+    with_offset = client.patch(f"/photos/{photo['id']}", json={"taken_at_local": "2026-05-14T07:32:10-03:00"}).json()
+    assert with_offset["taken_offset_minutes"] == -180
+    assert with_offset["taken_at"] == "2026-05-14T10:32:10Z"
+
+    reverted = client.patch(f"/photos/{photo['id']}", json={"taken_at_local": None}).json()
+    assert reverted["taken_at_local"] == "2020-01-01T00:00:00"
+    assert reverted["taken_at_manual"] is False
 
 
 def test_missing_photo(client):

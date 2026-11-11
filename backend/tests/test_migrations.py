@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
@@ -48,6 +50,8 @@ def test_round_trip_migrates_existing_data():
         assert conn.execute(text("SELECT photo_id, species_id, position FROM photo_species")).all() == [
             (photo_id, species_id, 0)
         ]
+        assert conn.scalar(text("SELECT taken_at_local FROM photos")) == datetime(2026, 5, 14, 7, 32, 10)
+        assert conn.scalar(text("SELECT taken_at_manual FROM photos")) is False
 
     command.downgrade(cfg, "0004")
     with engine.connect() as conn:

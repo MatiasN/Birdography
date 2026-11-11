@@ -27,12 +27,16 @@ def test_backfill_files(monkeypatch, capsys, client):
         other = db.get(Photo, missing["id"])
         other.file("original").sha256 = f"pending:{other.id}"
         storage.remove(other.file("original").path)
+        # As migrated by 0008: EXIF stored, camera-setting columns empty.
+        photo.exif = {"EXIF ISOSpeedRatings": "800", "EXIF FNumber": "28/5"}
+        photo.iso = photo.aperture = None
         db.commit()
 
     out = run(monkeypatch, capsys, "backfill-files")
-    assert "missing, skipped" in out and "1 files hashed" in out
+    assert "missing, skipped" in out and "1 files hashed" in out and "1 photos given camera settings" in out
     with Session(engine) as db:
         photo = db.get(Photo, complete["id"])
         assert photo.file("original").size_bytes > 0
         assert len(photo.file("original").sha256) == 64
+        assert (photo.iso, float(photo.aperture)) == (800, 5.6)
         assert db.get(Photo, missing["id"]).file("original").sha256 == f"pending:{missing['id']}"
