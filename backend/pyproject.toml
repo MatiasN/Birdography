@@ -16,7 +16,7 @@ dependencies = [
     "sqlalchemy>=2.0",
     "tzdata>=2026.6",
     "tzfpy>=2.1.2",
-    "uvicorn[standard]>=0.32",
+    "uvicorn[standard]>=0.54.0",
 ]
 
 [dependency-groups]
