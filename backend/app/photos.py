@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app import exif, storage
 from app.auth import CurrentUser
 from app.db import DB
-from app.models import FILE_KINDS, Location, Photo, PhotoFile, User
+from app.models import FILE_KINDS, Location, Photo, PhotoFile, PhotoSpecies, Species, User
 
 # Extension -> (format, MIME type, is RAW).
 FORMATS = {
@@ -58,13 +58,13 @@ class PhotoOut(BaseModel):
     lens: str | None
     lat: float | None
     lon: float | None
-    species_id: int | None
+    species_ids: list[int]
     location_id: int | None
     files: list[FileOut]
 
 
 class PhotoUpdate(BaseModel):
-    species_id: int | None = None
+    species_ids: list[int] | None = None
     location_id: int | None = None
 
 
@@ -136,7 +136,7 @@ def list_photos(
 ):
     query = select(Photo).where(Photo.owner_id == user.id).order_by(Photo.taken_at.desc().nulls_last(), Photo.id.desc())
     if species_id is not None:
-        query = query.where(Photo.species_id == species_id)
+        query = query.where(Photo.species_links.any(PhotoSpecies.species_id == species_id))
     if camera:
         query = query.where(Photo.camera == camera)
     if taken_from:
@@ -155,16 +155,22 @@ def get_photo(photo_id: int, db: DB, user: CurrentUser):
 def update_photo(photo_id: int, data: PhotoUpdate, db: DB, user: CurrentUser):
     photo = _get(db, user, photo_id)
     changes = data.model_dump(exclude_unset=True)
-    if changes.get("location_id") is not None:
-        location = db.get(Location, changes["location_id"])
-        if not location or location.owner_id != user.id:
-            raise HTTPException(400, "Unknown species or location")
-    for key, value in changes.items():
-        setattr(photo, key, value)
-    try:
-        db.commit()
-    except IntegrityError:
-        raise HTTPException(400, "Unknown species or location") from None
+
+    if "location_id" in changes:
+        if changes["location_id"] is not None:
+            location = db.get(Location, changes["location_id"])
+            if not location or location.owner_id != user.id:
+                raise HTTPException(400, "Unknown location")
+        photo.location_id = changes["location_id"]
+
+    if "species_ids" in changes:
+        ids = list(dict.fromkeys(changes["species_ids"] or []))
+        found = set(db.scalars(select(Species.id).where(Species.id.in_(ids))))
+        if found != set(ids):
+            raise HTTPException(400, "Unknown species")
+        photo.species_links = [PhotoSpecies(species_id=sid, position=i) for i, sid in enumerate(ids)]
+
+    db.commit()
     db.refresh(photo)
     return photo
 

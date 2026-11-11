@@ -19,7 +19,7 @@ from app.config import settings  # noqa: E402
 from app.db import engine  # noqa: E402
 from app.main import app  # noqa: E402
 
-TABLES = "photo_files, photos, locations, species, users"
+TABLES = "photo_species, photo_files, photos, locations, species, users"
 
 
 @pytest.fixture(scope="session", autouse=True)

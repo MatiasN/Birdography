@@ -45,6 +45,9 @@ def test_round_trip_migrates_existing_data():
     with engine.connect() as conn:
         file = conn.execute(text("SELECT photo_id, kind, path, format, is_raw, size_bytes, sha256 FROM photo_files"))
         assert file.one() == (photo_id, "original", "abc.nef", "nef", True, 0, f"pending:{photo_id}")
+        assert conn.execute(text("SELECT photo_id, species_id, position FROM photo_species")).all() == [
+            (photo_id, species_id, 0)
+        ]
 
     command.downgrade(cfg, "0004")
     with engine.connect() as conn:

@@ -9,6 +9,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     MetaData,
+    SmallInteger,
     String,
     UniqueConstraint,
     cast,
@@ -77,14 +78,19 @@ class Photo(Base):
     point: Mapped[WKBElement | None] = mapped_column(Geography("POINT", srid=4326, spatial_index=False))
     lat: Mapped[float | None] = column_property(func.ST_Y(cast(point, Geometry(srid=4326))))
     lon: Mapped[float | None] = column_property(func.ST_X(cast(point, Geometry(srid=4326))))
-    species_id: Mapped[int | None] = mapped_column(ForeignKey("species.id"), index=True)
     location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"), index=True)
 
-    species: Mapped[Species | None] = relationship()
     location: Mapped[Location | None] = relationship()
     files: Mapped[list[PhotoFile]] = relationship(
         back_populates="photo", cascade="all, delete-orphan", lazy="selectin", order_by="PhotoFile.kind"
     )
+    species_links: Mapped[list[PhotoSpecies]] = relationship(
+        cascade="all, delete-orphan", lazy="selectin", order_by="PhotoSpecies.position"
+    )
+
+    @property
+    def species_ids(self) -> list[int]:
+        return [link.species_id for link in self.species_links]
 
     def file(self, kind: str) -> PhotoFile | None:
         return next((f for f in self.files if f.kind == kind), None)
@@ -117,3 +123,13 @@ class PhotoFile(Base):
     @property
     def url(self) -> str:
         return f"/photos/{self.photo_id}/file?kind={self.kind}"
+
+
+class PhotoSpecies(Base):
+    __tablename__ = "photo_species"
+
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id", ondelete="CASCADE"), primary_key=True)
+    species_id: Mapped[int] = mapped_column(ForeignKey("species.id", ondelete="CASCADE"), primary_key=True, index=True)
+    position: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
+
+    species: Mapped[Species] = relationship(lazy="joined")

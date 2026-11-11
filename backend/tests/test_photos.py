@@ -85,18 +85,24 @@ def test_list_filters_by_camera(client):
     assert [p["camera"] for p in photos] == ["Nikon Z9"]
 
 
-def test_assign_species(client):
-    species = client.post("/species", json={"scientific_name": "Ardea cinerea"}).json()
+def test_assign_several_species(client):
+    heron = client.post("/species", json={"scientific_name": "Ardea cinerea"}).json()
+    stork = client.post("/species", json={"scientific_name": "Ciconia ciconia"}).json()
     photo = upload(client).json()
 
-    updated = client.patch(f"/photos/{photo['id']}", json={"species_id": species["id"]}).json()
-    assert updated["species_id"] == species["id"]
-    assert client.get("/photos", params={"species_id": species["id"]}).json() == [updated]
+    updated = client.patch(f"/photos/{photo['id']}", json={"species_ids": [stork["id"], heron["id"]]}).json()
+    assert updated["species_ids"] == [stork["id"], heron["id"]]
+    assert client.get("/photos", params={"species_id": heron["id"]}).json() == [updated]
+    assert client.get("/photos", params={"species_id": stork["id"]}).json() == [updated]
+
+    updated = client.patch(f"/photos/{photo['id']}", json={"species_ids": [heron["id"]]}).json()
+    assert updated["species_ids"] == [heron["id"]]
+    assert client.get("/photos", params={"species_id": stork["id"]}).json() == []
 
 
 def test_assign_unknown_species(client):
     photo = upload(client).json()
-    assert client.patch(f"/photos/{photo['id']}", json={"species_id": 999}).status_code == 400
+    assert client.patch(f"/photos/{photo['id']}", json={"species_ids": [999]}).status_code == 400
 
 
 def test_missing_photo(client):
