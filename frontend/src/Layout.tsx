@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { api, type User } from "./api";
+import { api, send, type User } from "./api";
 
 const link = ({ isActive }: { isActive: boolean }) =>
   `px-3 py-1 rounded ${isActive ? "bg-emerald-700 text-white" : "hover:bg-emerald-100"}`;
@@ -10,12 +10,12 @@ export default function Layout() {
   const [user, setUser] = useState<User>();
 
   useEffect(() => {
-    api<User>("/auth/me").then(setUser, () => navigate("/login"));
+    api<User>("/auth/me").then(setUser, () => void navigate("/login"));
   }, [navigate]);
 
   async function logout() {
-    await api("/auth/logout", { method: "POST" });
-    navigate("/login");
+    await send("/auth/logout", { method: "POST" });
+    await navigate("/login");
   }
 
   if (!user) return null;
@@ -31,7 +31,7 @@ export default function Layout() {
           Map
         </NavLink>
         <span className="ml-auto text-sm text-stone-500 hidden sm:inline">{user.email}</span>
-        <button onClick={logout} className="text-sm px-3 py-1 rounded hover:bg-stone-100">
+        <button onClick={() => void logout()} className="text-sm px-3 py-1 rounded hover:bg-stone-100">
           Log out
         </button>
       </header>

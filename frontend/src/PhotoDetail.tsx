@@ -1,7 +1,7 @@
 import "leaflet/dist/leaflet.css";
 import { useEffect, useState } from "react";
 import { CircleMarker, MapContainer, TileLayer, useMapEvents } from "react-leaflet";
-import { api, ApiError, json, offsetLabel, photoUrl, type Photo } from "./api";
+import { api, ApiError, json, offsetLabel, photoUrl, position, type Photo } from "./api";
 import { ATTRIBUTION, DEFAULT_CENTER, DEFAULT_ZOOM, OSM } from "./map";
 
 type Props = {
@@ -17,10 +17,8 @@ function ClickToPick({ onPick }: { onPick: (point: Point) => void }) {
   return null;
 }
 
-const hasPosition = (photo: Photo) => photo.lat !== null && photo.lon !== null;
-
 function positionText(photo: Photo): string {
-  if (!hasPosition(photo)) return "No position. Click the map where this photo was taken.";
+  if (!position(photo)) return "No position. Click the map where this photo was taken.";
   return photo.point_manual ? "Position chosen by you." : "Position from the camera's GPS.";
 }
 
@@ -50,15 +48,25 @@ export default function PhotoDetail({ photo, onChange, onClose }: Props) {
     }
   }
 
-  const current: Point | null = hasPosition(photo) ? { lat: photo.lat!, lon: photo.lon! } : null;
-  const center: [number, number] = current ? [current.lat, current.lon] : DEFAULT_CENTER;
+  const current = position(photo);
+  const center = current ?? DEFAULT_CENTER;
   const taken = photo.taken_at_local ? new Date(photo.taken_at_local).toLocaleString() : "No date";
 
   return (
-    <div className="fixed inset-0 z-[1000] bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        className="bg-white rounded shadow-lg w-full max-w-3xl max-h-full overflow-auto"
-        onClick={(event) => event.stopPropagation()}
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
+      {/* The backdrop: clicking it closes, like Escape and the Close button. */}
+      <button
+        type="button"
+        aria-label="Close"
+        tabIndex={-1}
+        onClick={onClose}
+        className="absolute inset-0 bg-black/60"
+      />
+      <dialog
+        open
+        aria-modal="true"
+        aria-label="Photo details"
+        className="relative m-0 p-0 border-0 bg-white rounded shadow-lg w-full max-w-3xl max-h-full overflow-auto"
       >
         <img src={photoUrl(photo, "preview")} alt="" className="w-full max-h-72 object-contain bg-stone-900" />
 
@@ -79,9 +87,7 @@ export default function PhotoDetail({ photo, onChange, onClose }: Props) {
           <MapContainer center={center} zoom={current ? 12 : DEFAULT_ZOOM} className="h-64 rounded">
             <TileLayer url={OSM} attribution={ATTRIBUTION} />
             <ClickToPick onPick={setPick} />
-            {current && (
-              <CircleMarker center={[current.lat, current.lon]} radius={7} pathOptions={{ color: "#047857" }} />
-            )}
+            {current && <CircleMarker center={current} radius={7} pathOptions={{ color: "#047857" }} />}
             {pick && <CircleMarker center={[pick.lat, pick.lon]} radius={7} pathOptions={{ color: "#b45309" }} />}
           </MapContainer>
 
@@ -90,7 +96,7 @@ export default function PhotoDetail({ photo, onChange, onClose }: Props) {
           <div className="flex flex-wrap gap-2">
             <button
               disabled={!pick || saving}
-              onClick={() => pick && save(pick)}
+              onClick={pick ? () => void save(pick) : undefined}
               className="bg-emerald-700 text-white rounded px-3 py-1 disabled:opacity-40 hover:bg-emerald-800"
             >
               Use this spot
@@ -98,7 +104,7 @@ export default function PhotoDetail({ photo, onChange, onClose }: Props) {
             {photo.point_manual && (
               <button
                 disabled={saving}
-                onClick={() => save(null)}
+                onClick={() => void save(null)}
                 className="rounded px-3 py-1 border border-stone-300 hover:bg-stone-100"
               >
                 Remove my position
@@ -109,7 +115,7 @@ export default function PhotoDetail({ photo, onChange, onClose }: Props) {
             </button>
           </div>
         </div>
-      </div>
+      </dialog>
     </div>
   );
 }

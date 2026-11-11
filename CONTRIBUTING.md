@@ -244,11 +244,28 @@ Tests marked `exiftool` are skipped when ExifTool is not installed, so coverage 
 
 RAW handling is tested against real camera files (NEF, CR3, ARW, DNG) in `backend/tests/fixtures/raw/`, shrunk to under 2.1 MB each by dropping their sensor data. [Its README](backend/tests/fixtures/raw/README.md) lists the sources and explains how to regenerate the files or add a camera.
 
+Frontend unit tests use [Vitest](https://vitest.dev/) with jsdom and Testing Library, next to the code they test (`*.test.ts(x)`):
+
+```bash
+cd frontend
+npm test                 # once, with coverage; CI requires 100% (lines, branches, functions, statements)
+npm run test:watch       # rerun on changes
+```
+
+`src/main.tsx` is the only file excluded from coverage, since it just mounts the router; the routes themselves are tested in `src/routes.test.tsx`. Helpers live in `src/test/`:
+
+- `mockApi(routes)` replaces `fetch` with canned replies keyed by `"METHOD /path"` and returns the calls made. A request to an unknown route fails the test.
+- `deferred()` gives a reply that arrives when the test says so, to check loading states.
+- `makePhoto()` builds a `Photo` with sensible defaults.
+- `src/test/leaflet.tsx` stands in for `react-leaflet` (`vi.mock("react-leaflet", () => import("./test/leaflet"))`), because Leaflet needs layout, SVG and canvas APIs that jsdom lacks. Markers render as elements carrying their position, and `clickMap(lat, lon)` triggers a map click.
+
 ## Code style
 
 ```bash
 cd backend && uv run ruff check --fix . && uv run ruff format .
-cd frontend && npm run format
+cd frontend && npm run lint && npm run format
 ```
 
-CI runs lint, format checks, backend tests with the coverage gate, `alembic check` and the frontend build on every push and pull request. A `deploy` job also runs shellcheck on the scripts, starts the production stack, checks that only the UI is published and that the backend runs unprivileged, then backs up, deletes everything, restores and compares the restored photo with the original.
+The frontend is linted with [oxlint](https://oxc.rs/docs/guide/usage/linter) (`.oxlintrc.json`) rather than ESLint: its type-aware rules run on `oxlint-tsgolint`, which is built on the TypeScript 7 compiler, while typescript-eslint does not support TypeScript 7. `npm run lint` fails on warnings too. Besides correctness rules it checks promises (`no-floating-promises`, `no-misused-promises`: use `void` for fire-and-forget calls and wrap async handlers as `onClick={() => void save()}`), hooks dependencies, and accessibility (clickable elements must be buttons or links).
+
+CI runs lint, format checks, backend and frontend tests with their coverage gates, `alembic check` and the frontend build on every push and pull request. A `deploy` job also runs shellcheck on the scripts, starts the production stack, checks that only the UI is published and that the backend runs unprivileged, then backs up, deletes everything, restores and compares the restored photo with the original.

@@ -2,24 +2,13 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import "./index.css";
-import Layout from "./Layout";
-import Login from "./pages/Login";
-import MapPage from "./pages/MapPage";
-import Photos from "./pages/Photos";
+import { routes } from "./routes";
 
-const router = createBrowserRouter([
-  { path: "/login", element: <Login /> },
-  {
-    element: <Layout />,
-    children: [
-      { path: "/", element: <Photos /> },
-      { path: "/map", element: <MapPage /> },
-    ],
-  },
-]);
+const root = document.getElementById("root");
+if (!root) throw new Error("index.html has no #root element");
 
-createRoot(document.getElementById("root")!).render(
+createRoot(root).render(
   <StrictMode>
-    <RouterProvider router={router} />
+    <RouterProvider router={createBrowserRouter(routes)} />
   </StrictMode>,
 );

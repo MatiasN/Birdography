@@ -12,15 +12,18 @@ export default function Login() {
     event.preventDefault();
     try {
       await api("/auth/login", json("POST", { email, password }));
-      navigate("/");
-    } catch (e) {
-      setError((e as Error).message);
+      await navigate("/");
+    } catch (problem) {
+      setError(problem instanceof Error ? problem.message : "Could not log in");
     }
   }
 
   return (
     <div className="min-h-screen grid place-items-center bg-stone-50 px-4">
-      <form onSubmit={submit} className="w-full max-w-sm space-y-3 bg-white p-6 rounded-lg shadow">
+      <form
+        onSubmit={(event) => void submit(event)}
+        className="w-full max-w-sm space-y-3 bg-white p-6 rounded-lg shadow"
+      >
         <h1 className="text-xl font-semibold">Birdography</h1>
         <input
           className="w-full border rounded px-3 py-2"
