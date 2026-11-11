@@ -1,6 +1,6 @@
 services:
   db:
-    image: postgis/postgis:17-3.5
+    image: postgis/postgis:18-3.7
     restart: unless-stopped
     env_file: .env
     # Not published: only the backend talks to it. compose.override.yml publishes it on localhost for development.
