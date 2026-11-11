@@ -1,10 +1,12 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from geoalchemy2 import WKTElement
-from pydantic import BaseModel, ConfigDict
+from PIL import Image, UnidentifiedImageError
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -12,56 +14,119 @@ from sqlalchemy.orm import Session
 from app import exif, storage
 from app.auth import CurrentUser
 from app.db import DB
-from app.models import Location, Photo, User
+from app.models import FILE_KINDS, Location, Photo, PhotoFile, PhotoSpecies, Species, User
 
-ALLOWED = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".dng", ".cr2", ".cr3", ".nef", ".arw", ".orf", ".rw2", ".raf"}
+# Extension -> (format, MIME type, is RAW).
+FORMATS = {
+    ".jpg": ("jpeg", "image/jpeg", False),
+    ".jpeg": ("jpeg", "image/jpeg", False),
+    ".png": ("png", "image/png", False),
+    ".tif": ("tiff", "image/tiff", False),
+    ".tiff": ("tiff", "image/tiff", False),
+    ".dng": ("dng", "image/x-adobe-dng", True),
+    ".cr2": ("cr2", "image/x-canon-cr2", True),
+    ".cr3": ("cr3", "image/x-canon-cr3", True),
+    ".nef": ("nef", "image/x-nikon-nef", True),
+    ".arw": ("arw", "image/x-sony-arw", True),
+    ".orf": ("orf", "image/x-olympus-orf", True),
+    ".rw2": ("rw2", "image/x-panasonic-rw2", True),
+    ".raf": ("raf", "image/x-fuji-raf", True),
+}
 
 router = APIRouter(prefix="/photos", tags=["photos"])
+
+
+class FileOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    kind: str
+    url: str
+    format: str
+    is_raw: bool
+    size_bytes: int
+    width: int | None
+    height: int | None
 
 
 class PhotoOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    file_path: str
     uploaded_at: datetime
     taken_at: datetime | None
+    taken_at_local: datetime | None
+    taken_offset_minutes: int | None
+    taken_at_manual: bool
     camera: str | None
     lens: str | None
+    iso: int | None
+    shutter_seconds: float | None
+    aperture: float | None
+    focal_length_mm: float | None
     lat: float | None
     lon: float | None
-    species_id: int | None
-    location_id: int | None
+    species_ids: list[int]
+    location_id: int | None = Field(validation_alias="active_location_id")
+    files: list[FileOut]
 
 
 class PhotoUpdate(BaseModel):
-    species_id: int | None = None
+    species_ids: list[int] | None = None
     location_id: int | None = None
+    # A naive value is the camera's local time; an offset-aware value also sets taken_offset_minutes.
+    # Explicit null reverts to the EXIF date.
+    taken_at_local: datetime | None = None
 
 
 @router.post("", response_model=PhotoOut, status_code=201)
 def upload(file: UploadFile, db: DB, user: CurrentUser):
     suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in ALLOWED:
+    if suffix not in FORMATS:
         raise HTTPException(400, f"Unsupported file type: {suffix or 'none'}")
+    fmt, mime_type, is_raw = FORMATS[suffix]
 
-    name = storage.save(file.file, suffix)
-    meta = exif.read(storage.path(name))
-    point = None
-    if meta["lat"] is not None and meta["lon"] is not None:
-        point = WKTElement(f"POINT({meta['lon']} {meta['lat']})", srid=4326)
+    saved = storage.save(file.file, suffix)
+    if db.scalar(select(PhotoFile.id).where(PhotoFile.sha256 == saved.sha256)):
+        storage.remove(saved.name)
+        raise HTTPException(409, "This file has already been uploaded")
+    try:
+        meta = exif.read(storage.path(saved.name))
+        point = None
+        if meta["lat"] is not None and meta["lon"] is not None:
+            point = WKTElement(f"POINT({meta['lon']} {meta['lat']})", srid=4326)
+        # Pillow cannot open RAW; those get their dimensions once metadata is read with ExifTool.
+        width, height = (None, None) if is_raw else _dimensions(storage.path(saved.name))
 
-    photo = Photo(
-        owner_id=user.id,
-        file_path=name,
-        taken_at=meta["taken_at"],
-        camera=meta["camera"],
-        lens=meta["lens"],
-        exif=meta["exif"],
-        point=point,
-    )
-    db.add(photo)
-    db.commit()
+        photo = Photo(
+            owner_id=user.id,
+            **{field: meta[field] for field in (*exif.TAKEN_FIELDS, *exif.CAMERA_FIELDS)},
+            exif=meta["exif"],
+            point=point,
+            files=[
+                PhotoFile(
+                    kind="original",
+                    path=saved.name,
+                    original_filename=(file.filename or "")[:255] or None,
+                    mime_type=mime_type,
+                    format=fmt,
+                    is_raw=is_raw,
+                    size_bytes=saved.size,
+                    sha256=saved.sha256,
+                    width=width,
+                    height=height,
+                )
+            ],
+        )
+        db.add(photo)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        storage.remove(saved.name)
+        raise HTTPException(409, "This file has already been uploaded") from None
+    except BaseException:
+        db.rollback()
+        storage.remove(saved.name)
+        raise
     db.refresh(photo)
     return photo
 
@@ -77,9 +142,13 @@ def list_photos(
     limit: int = Query(50, le=200),
     offset: int = 0,
 ):
-    query = select(Photo).where(Photo.owner_id == user.id).order_by(Photo.taken_at.desc().nulls_last(), Photo.id.desc())
+    query = (
+        select(Photo)
+        .where(Photo.owner_id == user.id, Photo.deleted_at.is_(None))
+        .order_by(Photo.taken_at.desc().nulls_last(), Photo.id.desc())
+    )
     if species_id is not None:
-        query = query.where(Photo.species_id == species_id)
+        query = query.where(Photo.species_links.any(PhotoSpecies.species_id == species_id))
     if camera:
         query = query.where(Photo.camera == camera)
     if taken_from:
@@ -98,31 +167,78 @@ def get_photo(photo_id: int, db: DB, user: CurrentUser):
 def update_photo(photo_id: int, data: PhotoUpdate, db: DB, user: CurrentUser):
     photo = _get(db, user, photo_id)
     changes = data.model_dump(exclude_unset=True)
-    if changes.get("location_id") is not None:
-        location = db.get(Location, changes["location_id"])
-        if not location or location.owner_id != user.id:
-            raise HTTPException(400, "Unknown species or location")
-    for key, value in changes.items():
-        setattr(photo, key, value)
-    try:
-        db.commit()
-    except IntegrityError:
-        raise HTTPException(400, "Unknown species or location") from None
+
+    if "location_id" in changes:
+        if changes["location_id"] is not None:
+            location = db.get(Location, changes["location_id"])
+            if not location or location.owner_id != user.id or location.deleted_at:
+                raise HTTPException(400, "Unknown location")
+        photo.location_id = changes["location_id"]
+
+    if "species_ids" in changes:
+        ids = list(dict.fromkeys(changes["species_ids"] or []))
+        found = set(db.scalars(select(Species.id).where(Species.id.in_(ids), Species.deleted_at.is_(None))))
+        if found != set(ids):
+            raise HTTPException(400, "Unknown species")
+        photo.species_links = [PhotoSpecies(species_id=sid, position=i) for i, sid in enumerate(ids)]
+
+    if "taken_at_local" in changes:
+        _set_taken_at(photo, changes["taken_at_local"])
+
+    db.commit()
     db.refresh(photo)
     return photo
 
 
-@router.get("/{photo_id}/file")
-def get_file(photo_id: int, db: DB, user: CurrentUser):
+@router.delete("/{photo_id}", status_code=204)
+def delete_photo(photo_id: int, db: DB, user: CurrentUser):
+    """Move the photo to the trash; it is purged after the retention period."""
     photo = _get(db, user, photo_id)
-    path = storage.path(photo.file_path)
-    if not path.exists():
+    photo.deleted_at = datetime.now(UTC)
+    db.commit()
+
+
+@router.get("/{photo_id}/file")
+def get_file(
+    photo_id: int,
+    db: DB,
+    user: CurrentUser,
+    kind: Literal["original", "preview", "thumbnail"] = "preview",
+):
+    """Serve a stored file. Preview and thumbnail fall back to the original when absent."""
+    photo = _get(db, user, photo_id)
+    chain = FILE_KINDS[FILE_KINDS.index(kind) :: -1]  # requested kind, then larger ones down to the original
+    file = next((f for k in chain if (f := photo.file(k))), None)
+    if not file or not storage.path(file.path).exists():
         raise HTTPException(404, "File missing")
-    return FileResponse(path)
+    return FileResponse(storage.path(file.path), media_type=file.mime_type)
+
+
+def _set_taken_at(photo: Photo, value: datetime | None) -> None:
+    if value is None:  # back to what the camera recorded
+        meta = exif.parse(photo.exif or {})
+        for field in exif.TAKEN_FIELDS:
+            setattr(photo, field, meta[field])
+        photo.taken_at_manual = False
+        return
+    if value.tzinfo is not None:
+        photo.taken_offset_minutes = int(value.utcoffset().total_seconds() // 60)
+        value = value.replace(tzinfo=None)
+    photo.taken_at_local = value
+    photo.taken_at = exif.instant(value, photo.taken_offset_minutes)
+    photo.taken_at_manual = True
+
+
+def _dimensions(path: Path) -> tuple[int | None, int | None]:
+    try:
+        with Image.open(path) as image:
+            return image.size
+    except UnidentifiedImageError, OSError:
+        return None, None
 
 
 def _get(db: Session, user: User, photo_id: int) -> Photo:
     photo = db.get(Photo, photo_id)
-    if not photo or photo.owner_id != user.id:
+    if not photo or photo.owner_id != user.id or photo.deleted_at:
         raise HTTPException(404, "Photo not found")
     return photo

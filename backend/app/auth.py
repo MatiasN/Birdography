@@ -41,6 +41,16 @@ def create_user(db: Session, email: str, password: str) -> User:
     return user
 
 
+def restore_user(db: Session, email: str) -> User:
+    """Take an account out of the trash, together with its photos and locations."""
+    user = db.scalar(select(User).where(User.email == email.lower()))
+    if not user:
+        raise LookupError(f"No user with email {email}")
+    user.deleted_at = None
+    db.commit()
+    return user
+
+
 def get_current_user(
     request: Request,
     db: DB,
@@ -52,7 +62,7 @@ def get_current_user(
     except jwt.InvalidTokenError, KeyError, ValueError:
         raise HTTPException(401, "Not authenticated") from None
     user = db.get(User, user_id)
-    if not user:
+    if not user or user.deleted_at:
         raise HTTPException(401, "Not authenticated")
     return user
 
@@ -63,7 +73,7 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 @router.post("/login")
 def login(data: Credentials, response: Response, db: DB):
     user = db.scalar(select(User).where(User.email == data.email.lower()))
-    if not user or not passwords.verify(data.password, user.password_hash):
+    if not user or user.deleted_at or not passwords.verify(data.password, user.password_hash):
         raise HTTPException(401, "Invalid email or password")
 
     expires = datetime.now(UTC) + timedelta(days=settings.session_days)
@@ -80,6 +90,14 @@ def logout(response: Response):
 @router.get("/me", response_model=UserOut)
 def me(user: CurrentUser):
     return user
+
+
+@router.delete("/me", status_code=204)
+def delete_me(user: CurrentUser, response: Response, db: DB):
+    """Move the account to the trash. Photos and locations go with it; `app.cli restore-user` brings it back."""
+    user.deleted_at = datetime.now(UTC)
+    db.commit()
+    response.delete_cookie(COOKIE)
 
 
 @router.post("/register", response_model=UserOut, status_code=201)

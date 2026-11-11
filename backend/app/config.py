@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     session_days: int = 30
     secure_cookies: bool = False
     allow_registration: bool = False
+    trash_days: int = 30
 
     @property
     def database_url(self) -> str:

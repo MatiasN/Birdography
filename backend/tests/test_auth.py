@@ -1,4 +1,4 @@
-from tests.conftest import login
+from tests.conftest import login, make_jpeg
 
 
 def test_me(client):
@@ -25,12 +25,20 @@ def test_logout(client):
     assert client.get("/auth/me").status_code == 401
 
 
+def test_deleted_account_is_logged_out(client, anon):
+    token = anon.post("/auth/login", json={"email": "me@example.com", "password": "secret"}).json()["access_token"]
+    assert client.delete("/auth/me").status_code == 204
+    assert client.get("/auth/me").status_code == 401  # cookie cleared
+    assert anon.get("/auth/me", headers={"Authorization": f"Bearer {token}"}).status_code == 401  # token still valid
+    assert anon.post("/auth/login", json={"email": "me@example.com", "password": "secret"}).status_code == 401
+
+
 def test_registration_disabled_by_default(anon):
     assert anon.post("/auth/register", json={"email": "new@example.com", "password": "x"}).status_code == 403
 
 
 def test_users_cannot_see_each_others_data(client):
-    photo = client.post("/photos", files={"file": ("bird.jpg", b"x", "image/jpeg")}).json()
+    photo = client.post("/photos", files={"file": ("bird.jpg", make_jpeg(), "image/jpeg")}).json()
     location = client.post("/locations", json={"name": "Home", "lat": 0, "lon": 0}).json()
 
     other = login("other@example.com")
@@ -39,5 +47,5 @@ def test_users_cannot_see_each_others_data(client):
     assert other.get(f"/photos/{photo['id']}/file").status_code == 404
     assert other.get(f"/locations/{location['id']}").status_code == 404
 
-    own = other.post("/photos", files={"file": ("mine.jpg", b"x", "image/jpeg")}).json()
+    own = other.post("/photos", files={"file": ("mine.jpg", make_jpeg(), "image/jpeg")}).json()
     assert other.patch(f"/photos/{own['id']}", json={"location_id": location["id"]}).status_code == 400

@@ -1,12 +1,31 @@
+export type PhotoFile = {
+  kind: "original" | "preview" | "thumbnail";
+  url: string;
+  format: string;
+  is_raw: boolean;
+  size_bytes: number;
+  width: number | null;
+  height: number | null;
+};
+
 export type Photo = {
   id: number;
+  uploaded_at: string;
   taken_at: string | null;
+  taken_at_local: string | null;
+  taken_offset_minutes: number | null;
+  taken_at_manual: boolean;
   camera: string | null;
   lens: string | null;
+  iso: number | null;
+  shutter_seconds: number | null;
+  aperture: number | null;
+  focal_length_mm: number | null;
   lat: number | null;
   lon: number | null;
-  species_id: number | null;
+  species_ids: number[];
   location_id: number | null;
+  files: PhotoFile[];
 };
 
 export type User = { id: number; email: string };
@@ -35,4 +54,10 @@ export const json = (method: string, body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
-export const photoUrl = (photo: Photo) => `/api/photos/${photo.id}/file`;
+/** Smallest browser-viewable file; the API falls back to larger kinds and finally the original. */
+export const photoUrl = (photo: Photo, kind: PhotoFile["kind"] = "thumbnail") =>
+  `/api/photos/${photo.id}/file?kind=${kind}`;
+
+/** The date the photo was taken as the camera (or the user) recorded it, without time zone shifts. */
+export const takenDate = (photo: Photo) =>
+  photo.taken_at_local ? new Date(photo.taken_at_local).toLocaleDateString() : null;
