@@ -11,6 +11,7 @@
 ```
 backend/    FastAPI app, Alembic migrations, pytest suite
 frontend/   React + Vite app
+docs/plans/ Design plans for roadmap items
 docker-compose.yml       db, backend, frontend
 compose.override.yml     dev extras, loaded automatically (backend hot reload)
 ```
