@@ -183,3 +183,33 @@ def test_read_raises_without_exiftool(monkeypatch, tmp_path):
     file.write_bytes(make_jpeg())
     with pytest.raises(exiftool.ExifToolError, match="not found"):
         exif.read(file)
+
+
+def test_raw_dimensions_prefer_crop_tags():
+    sensor = {"Composite:ImageSize": "4000 2672", "IFD0:ImageWidth": 160, "IFD0:ImageHeight": 120}
+    assert exif.raw_dimensions(sensor) == (4000, 2672)
+    exif_size = {**sensor, "ExifIFD:ExifImageWidth": 3990, "ExifIFD:ExifImageHeight": 2660}
+    assert exif.raw_dimensions(exif_size) == (3990, 2660)
+    nikon = {**exif_size, "Nikon:CropArea": "8 8 3984 2656"}
+    assert exif.raw_dimensions(nikon) == (3984, 2656)
+    dng = {**nikon, "SubIFD:DefaultCropSize": "3960 2640"}
+    assert exif.raw_dimensions(dng) == (3960, 2640)
+
+
+def test_raw_dimensions_apply_dng_default_scale():
+    """Non-square sensor pixels (Nikon D1X): the DNG says to stretch the crop to get the displayed size."""
+    tags = {"IFD0:DefaultCropSize": "3008 960", "IFD0:DefaultScale": "0.5 1"}
+    assert exif.raw_dimensions(tags) == (1504, 960)
+    assert exif.raw_dimensions({**tags, "IFD0:DefaultScale": "junk"}) == (3008, 960)
+
+
+def test_raw_dimensions_skip_unusable_values():
+    assert exif.raw_dimensions({}) == (None, None)
+    junk = {
+        "SubIFD:DefaultCropSize": "0 0",
+        "Nikon:CropArea": "8 8",
+        "ExifIFD:ExifImageWidth": 4320,  # height missing
+        "Composite:ImageSize": "wide tall",
+    }
+    assert exif.raw_dimensions(junk) == (None, None)
+    assert exif.raw_dimensions({**junk, "Composite:ImageSize": "4320 2880"}) == (4320, 2880)

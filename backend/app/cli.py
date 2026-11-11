@@ -97,6 +97,8 @@ def reread_metadata(db: Session, photo_id: int | None = None) -> int:
             print(f"photo {photo.id}: {err}, skipped")
             continue
         exif.apply(photo, meta, keep_manual=True)
+        if original.is_raw:
+            original.width, original.height = exif.raw_dimensions(meta["exif"])
         updated += 1
     db.commit()
     print(f"{updated} photos updated")

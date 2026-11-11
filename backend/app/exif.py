@@ -92,6 +92,30 @@ def manual_position(photo) -> Position | None:
     return (photo.lat, photo.lon) if photo.point_manual and photo.lat is not None else None
 
 
+def raw_dimensions(tags: dict) -> tuple[int | None, int | None]:
+    """Visible size of a RAW image from its tags, in stored orientation (as Pillow reports other formats).
+
+    The plain `ImageWidth`/`ImageHeight` don't work: on the raw IFD they include sensor margins the camera
+    never shows, and in older NEFs the IFD0 pair describes a 160 px thumbnail. Crop tags come first:
+    `DefaultCropSize` (DNG and newer ARW, scaled by `DefaultScale`), Nikon's `CropArea`, then the EXIF size
+    the camera writes for its JPEG, and only then ExifTool's composite of the raw IFD.
+    """
+    for key, value in tags.items():
+        if key.endswith(":DefaultCropSize"):
+            scale = _numbers(tags.get(key.replace(":DefaultCropSize", ":DefaultScale")))
+            if size := _size(_numbers(value), scale if len(scale) == 2 else [1, 1]):
+                return size
+    candidates = (
+        _numbers(tags.get("Nikon:CropArea"))[2:],  # left, top, width, height
+        _numbers(tags.get("ExifIFD:ExifImageWidth")) + _numbers(tags.get("ExifIFD:ExifImageHeight")),
+        _numbers(tags.get("Composite:ImageSize")),
+    )
+    for numbers in candidates:
+        if size := _size(numbers):
+            return size
+    return None, None
+
+
 def instant(local: datetime | None, offset_minutes: int | None) -> datetime | None:
     """Timezone-aware instant for a local time; without an offset the local time is read as UTC."""
     if local is None:
@@ -155,6 +179,20 @@ def _decimal(value, places):
     if result is None or not result.is_finite() or result <= 0:
         return None
     return result.quantize(Decimal(1).scaleb(-places))
+
+
+def _numbers(value) -> list[float]:
+    """3960 -> [3960.0]; '3960 2640' -> [3960.0, 2640.0]; None or junk -> []."""
+    try:
+        return [float(v) for v in str(value).split()] if value not in (None, "") else []
+    except ValueError:
+        return []
+
+
+def _size(numbers: list[float], scale=(1, 1)) -> tuple[int, int] | None:
+    if len(numbers) != 2 or min(numbers) <= 0:
+        return None
+    return round(numbers[0] * scale[0]), round(numbers[1] * scale[1])
 
 
 def _float(value):

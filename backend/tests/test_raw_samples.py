@@ -9,19 +9,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import exif, exiftool, filetypes, storage
-from app.cli import backfill_derivatives
+from app.cli import backfill_derivatives, reread_metadata
 from app.config import settings
 from app.db import engine
-from app.models import PhotoFile
+from app.models import Photo, PhotoFile
 from tests.conftest import RAW_SAMPLES, stored
 from tests.test_upload import kinds, upload
 
 pytestmark = pytest.mark.exiftool
 
-
 SAMPLES = list(RAW_SAMPLES.values())
-
-
 # The client's name never decides the type: no extension, or the extension of another format.
 CLIENT_NAMES = {"nef": "IMG_0001.CR3", "cr3": "DSC_0001.NEF", "arw": "DSC00001", "dng": "photo.jpg"}
 
@@ -35,6 +32,25 @@ def test_detected_by_content_without_extension(tmp_path, sample):
     upload_temp = tmp_path / "upload"
     shutil.copyfile(sample.path, upload_temp)
     assert filetypes.detect(upload_temp) == filetypes.TYPES[sample.format]
+
+
+def test_nikon_z_nef_is_not_mistaken_for_coolpix_nrw(tmp_path):
+    """ExifTool 13.50 reports this NEF as NRW even with a .nef extension; detection corrects it."""
+    sample = RAW_SAMPLES["nef"]
+    upload_temp = tmp_path / "upload"
+    shutil.copyfile(sample.path, upload_temp)
+    reported = exiftool.file_type(upload_temp)
+    assert reported["file_type"] in ("NEF", "NRW")
+    assert reported["model"] == sample.model
+    assert filetypes.detect(upload_temp).format == "nef"
+
+
+@pytest.mark.parametrize("sample", SAMPLES, ids=by_format)
+def test_metadata_survived_shrinking(sample):
+    tags = exiftool.metadata(sample.path)
+    assert tags["IFD0:Model"] == sample.model
+    assert tags["ExifIFD:DateTimeOriginal"] == sample.taken_at
+    assert str(tags.get("ExifTool:Warning", "[Minor]")).startswith("[Minor]")  # nothing truncated
 
 
 # camera, lens, ISO, shutter, aperture, focal length, offset minutes; None where the file says 0 or '----'.
@@ -58,25 +74,8 @@ def test_metadata_fields(sample):
     assert meta["taken_offset_minutes"] == offset
     assert (meta["lat"], meta["lon"]) == (None, None)
     assert not any(k.startswith(("System:", "ExifTool:")) for k in meta["exif"])
-
-
-def test_nikon_z_nef_is_not_mistaken_for_coolpix_nrw(tmp_path):
-    """ExifTool 13.50 reports this NEF as NRW even with a .nef extension; detection corrects it."""
-    sample = RAW_SAMPLES["nef"]
-    upload_temp = tmp_path / "upload"
-    shutil.copyfile(sample.path, upload_temp)
-    reported = exiftool.file_type(upload_temp)
-    assert reported["file_type"] in ("NEF", "NRW")
-    assert reported["model"] == sample.model
-    assert filetypes.detect(upload_temp).format == "nef"
-
-
-@pytest.mark.parametrize("sample", SAMPLES, ids=by_format)
-def test_metadata_survived_shrinking(sample):
-    tags = exiftool.metadata(sample.path)
-    assert tags["IFD0:Model"] == sample.model
-    assert tags["ExifIFD:DateTimeOriginal"] == sample.taken_at
-    assert str(tags.get("ExifTool:Warning", "[Minor]")).startswith("[Minor]")  # nothing truncated
+    # Not the sensor size with margins (Composite:ImageSize): Z5_2 4000x2672, ILCE-7S 2816x1872.
+    assert exif.raw_dimensions(meta["exif"]) == sample.size
 
 
 @pytest.mark.parametrize("sample", SAMPLES, ids=by_format)
@@ -102,6 +101,7 @@ def test_upload_produces_preview_and_thumbnail(client, sample):
         True,
         sample.path.stat().st_size,
     )
+    assert (original["width"], original["height"]) == sample.size
     photo = response.json()
     assert photo["camera"] == EXPECTED_FIELDS[sample.format][0]
     assert photo["taken_at_local"] == datetime.strptime(sample.taken_at, "%Y:%m:%d %H:%M:%S").isoformat()
@@ -173,3 +173,22 @@ def test_position_on_the_map_derives_the_offset_unless_the_camera_knew_it(client
     nef = upload(client, RAW_SAMPLES["nef"].read()).json()  # camera recorded +02:00
     placed = client.patch(f"/photos/{nef['id']}", json={"lat": 35.68, "lon": 139.69}).json()
     assert placed["taken_offset_minutes"] == 120 and placed["point_manual"] is True
+
+
+def test_reread_metadata_fills_raw_dimensions(client):
+    """RAW uploaded before this change, or while ExifTool was missing, has no dimensions until reread."""
+    sample = RAW_SAMPLES["arw"]
+    photo = upload(client, sample.read()).json()
+    with Session(engine) as db:
+        original = db.get(Photo, photo["id"]).file("original")
+        original.width = original.height = None
+        db.commit()
+        assert reread_metadata(db, photo["id"]) == 1
+    original = kinds(client.get(f"/photos/{photo['id']}").json())["original"]
+    assert (original["width"], original["height"]) == sample.size
+
+
+def test_raw_upload_without_exiftool_has_no_dimensions(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "exiftool_path", str(tmp_path / "missing-exiftool"))
+    original = kinds(upload(client, RAW_SAMPLES["cr3"].read()).json())["original"]
+    assert (original["format"], original["width"], original["height"]) == ("cr3", None, None)

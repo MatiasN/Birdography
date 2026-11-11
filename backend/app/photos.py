@@ -106,8 +106,10 @@ def upload(file: UploadFile, background: BackgroundTasks, db: DB, user: CurrentU
             # The photo is still worth keeping; `python -m app.cli reread-metadata` fills the gap later.
             log.warning("%s: metadata not read (%s)", name, err)
             meta = exif.empty()
-        # Pillow cannot open RAW; those get their dimensions once metadata is read with ExifTool.
-        width, height = (None, None) if ftype.is_raw else derivatives.dimensions(storage.path(name))
+        if ftype.is_raw:  # Pillow cannot open RAW; the camera's tags say how large the image is
+            width, height = exif.raw_dimensions(meta["exif"])
+        else:
+            width, height = derivatives.dimensions(storage.path(name))
 
         photo = Photo(
             owner_id=user.id,
