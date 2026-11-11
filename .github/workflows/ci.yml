@@ -24,11 +24,14 @@ jobs:
           --health-cmd pg_isready
           --health-interval 5s
           --health-retries 10
+    # Every required setting, as the app sees it in production. pytest switches POSTGRES_DB to birdography_test
+    # itself (tests/conftest.py); the alembic steps below use this one.
     env:
+      POSTGRES_DB: birdography
       POSTGRES_USER: birdography
       POSTGRES_PASSWORD: birdography
       POSTGRES_HOST: localhost
-      SECRET_KEY: ci-secret
+      SECRET_KEY: ci-only-secret-key-at-least-32-characters
     steps:
       - uses: actions/checkout@v5
       - uses: astral-sh/setup-uv@v6
