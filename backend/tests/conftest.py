@@ -1,11 +1,13 @@
 import io
 import itertools
 import os
+import shutil
 from pathlib import Path
 
 os.environ["POSTGRES_DB"] = os.environ.get("TEST_POSTGRES_DB", "birdography_test")
 os.environ.setdefault("SECRET_KEY", "test-secret")
 
+import pillow_heif  # noqa: E402
 import pytest  # noqa: E402
 from alembic import command  # noqa: E402
 from alembic.config import Config  # noqa: E402
@@ -21,6 +23,18 @@ from app.db import engine  # noqa: E402
 from app.main import app  # noqa: E402
 
 TABLES = "photo_species, photo_files, photos, locations, species, users"
+
+pillow_heif.register_heif_opener()
+
+
+def pytest_collection_modifyitems(items):
+    """Skip tests marked `exiftool` when the binary is missing; CI installs it, so nothing is skipped there."""
+    if shutil.which(settings.exiftool_path):
+        return
+    skip = pytest.mark.skip(reason=f"ExifTool not found at {settings.exiftool_path!r}")
+    for item in items:
+        if "exiftool" in item.keywords:
+            item.add_marker(skip)
 
 
 @pytest.fixture(scope="session", autouse=True)

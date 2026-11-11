@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     secure_cookies: bool = False
     allow_registration: bool = False
     trash_days: int = 30
+    exiftool_path: str = "exiftool"
+    max_upload_mb: int = 40
+    max_raw_upload_mb: int = 70
 
     @property
     def database_url(self) -> str:
