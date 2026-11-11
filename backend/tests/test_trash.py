@@ -24,7 +24,7 @@ def test_purge_removes_only_expired_rows_and_their_files(client):
     client.delete(f"/species/{species['id']}")
     location = client.post("/locations", json={"name": "Home", "lat": 0, "lon": 0}).json()
     client.delete(f"/locations/{location['id']}")
-    assert len(stored()) == 2  # two originals
+    assert len(stored()) == 4  # two originals, two thumbnails
 
     with Session(engine) as db:
         assert trash.purge(db) == {"photos": 0, "locations": 0, "species": 0, "users": 0}
@@ -33,7 +33,7 @@ def test_purge_removes_only_expired_rows_and_their_files(client):
         assert set(db.scalars(select(PhotoFile.photo_id))) == {kept["id"]}
         assert db.get(Species, species["id"]) is None
         assert db.get(Location, location["id"]) is None
-    assert len(stored()) == 1
+    assert len(stored()) == 2
     assert client.get("/photos").json() == [kept]
 
 
@@ -63,5 +63,5 @@ def test_purging_account_removes_its_photos_and_locations(client):
         assert db.scalar(select(User).where(User.email == "me@example.com")) is None
         assert db.scalars(select(Photo.owner_id)).all() == [2]
         assert db.scalars(select(Location.id)).all() == []
-    assert len(stored()) == 1  # the other user's original
+    assert len(stored()) == 2  # the other user's original and thumbnail
     assert len(other.get("/photos").json()) == 1

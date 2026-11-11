@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     exiftool_path: str = "exiftool"
     max_upload_mb: int = 40
     max_raw_upload_mb: int = 70
+    # Above this size, previews and thumbnails are generated after the response instead of before it.
+    background_derivatives_mb: int = 20
 
     @property
     def database_url(self) -> str:

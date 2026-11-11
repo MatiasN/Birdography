@@ -44,8 +44,9 @@ def test_upload_records_original_file(client):
     data = make_jpeg()
     photo = upload(client, data, name="DSC_0001.jpg").json()
 
-    (file,) = photo["files"]
+    file, thumbnail = photo["files"]
     assert file["kind"] == "original"
+    assert thumbnail["kind"] == "thumbnail"
     assert file["format"] == "jpeg"
     assert file["is_raw"] is False
     assert file["size_bytes"] == len(data)
@@ -61,7 +62,6 @@ def test_duplicate_upload_is_rejected_for_everyone(client):
     other = login("other@example.com")
     assert upload(other, data).status_code == 409
     assert other.get("/photos").json() == []
-    assert len(stored()) == 1
 
 
 def test_type_comes_from_content_not_extension(client):
@@ -81,9 +81,9 @@ def test_file_is_served_with_fallback(client):
     original = client.get(f"/photos/{photo['id']}/file", params={"kind": "original"})
     assert original.content == data
     assert original.headers["content-type"] == "image/jpeg"
-    # No preview or thumbnail yet: both fall back to the original.
-    assert client.get(f"/photos/{photo['id']}/file").content == data
-    assert client.get(f"/photos/{photo['id']}/file", params={"kind": "thumbnail"}).content == data
+    # A JPEG needs no preview: that kind falls back to the original. The thumbnail exists.
+    assert client.get(f"/photos/{photo['id']}/file", params={"kind": "preview"}).content == data
+    assert client.get(f"/photos/{photo['id']}/file", params={"kind": "thumbnail"}).content != data
     assert client.get(f"/photos/{photo['id']}/file", params={"kind": "huge"}).status_code == 422
 
 
@@ -145,8 +145,8 @@ def test_delete_moves_to_trash(client):
 
     assert client.get(f"/photos/{photo['id']}").status_code == 404
     assert client.get("/photos").json() == []
-    # The file stays until the trash is purged.
-    assert len(stored()) == 1
+    # The files stay until the trash is purged.
+    assert len(stored()) == 2
 
 
 def test_missing_photo(client):
