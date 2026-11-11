@@ -1,11 +1,20 @@
 from tests.conftest import make_jpeg
 
-HERON = {"scientific_name": "Ardea cinerea", "name_en": "Grey Heron", "name_pt": "Garça-real", "family": "Ardeidae"}
+HERON = {
+    "scientific_name": "Ardea cinerea",
+    "name_en": "Grey Heron",
+    "name_pt": "Garça-real",
+    "family": "Ardeidae",
+    "order_name": "Pelecaniformes",
+    "ebird_code": "gryher1",
+    "taxon_order": 1063.0,
+}
 
 
 def test_create_and_get(client):
     created = client.post("/species", json=HERON)
     assert created.status_code == 201
+    assert created.json() == {"id": created.json()["id"], **HERON}
     assert client.get(f"/species/{created.json()['id']}").json() == created.json()
 
 
@@ -14,13 +23,18 @@ def test_duplicate_scientific_name(client):
     assert client.post("/species", json=HERON).status_code == 409
 
 
-def test_search_matches_any_language(client):
+def test_duplicate_ebird_code(client):
+    client.post("/species", json=HERON)
+    assert client.post("/species", json={"scientific_name": "Other", "ebird_code": "gryher1"}).status_code == 409
+
+
+def test_search_ignores_case_accents_and_language(client):
     client.post("/species", json=HERON)
     client.post("/species", json={"scientific_name": "Ciconia ciconia", "name_en": "White Stork"})
 
-    for q in ["ardea", "heron", "garça"]:
+    for q in ["ardea", "HERON", "garça", "garca", "GARCA-REAL"]:
         names = [s["scientific_name"] for s in client.get("/species", params={"q": q}).json()]
-        assert names == ["Ardea cinerea"]
+        assert names == ["Ardea cinerea"], q
 
 
 def test_delete_missing_species(client):

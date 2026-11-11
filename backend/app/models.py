@@ -53,6 +53,9 @@ class Species(Base):
     name_en: Mapped[str | None] = mapped_column(String(200))
     name_pt: Mapped[str | None] = mapped_column(String(200))
     family: Mapped[str | None] = mapped_column(String(200))
+    order_name: Mapped[str | None] = mapped_column(String(100))
+    ebird_code: Mapped[str | None] = mapped_column(String(16), unique=True)
+    taxon_order: Mapped[Decimal | None] = mapped_column(Numeric(10, 2), index=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
