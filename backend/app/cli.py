@@ -1,4 +1,5 @@
 import argparse
+import os
 from datetime import timedelta
 from getpass import getpass
 
@@ -6,16 +7,32 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import derivatives, exif, exiftool, storage, trash
-from app.auth import create_user, restore_user
+from app.auth import create_user, password_problem, restore_user, set_password
 from app.config import settings
 from app.db import engine
-from app.models import Photo, PhotoFile
+from app.models import Photo, PhotoFile, User
+
+
+def drop_root() -> None:
+    """`docker compose exec` bypasses the image's entrypoint and runs as root. Files the CLI writes (previews,
+    thumbnails) must belong to the backend's user, so inside the image (PUID set) it switches to that user first."""
+    if os.geteuid() != 0 or not os.environ.get("PUID"):
+        return
+    uid = int(os.environ["PUID"])
+    gid = int(os.environ.get("PGID") or uid)
+    os.setgroups([])
+    os.setgid(gid)
+    os.setuid(uid)
 
 
 def main():
+    drop_root()
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("create-user", help="create an account").add_argument("email")
+    commands.add_parser("set-password", help="reset a password; ends every session of the account").add_argument(
+        "email"
+    )
     commands.add_parser("restore-user", help="take an account out of the trash").add_argument("email")
     restore = commands.add_parser("restore", help="take a photo, location or species out of the trash")
     restore.add_argument("kind", choices=["photo", "location", "species"])
@@ -31,11 +48,14 @@ def main():
 
     with Session(engine) as db:
         if args.command == "create-user":
-            password = getpass("Password: ")
-            if password != getpass("Repeat password: "):
-                raise SystemExit("Passwords do not match")
-            user = create_user(db, args.email, password)
+            user = create_user(db, args.email, ask_password())
             print(f"Created user {user.id}: {user.email}")
+        elif args.command == "set-password":
+            user = db.scalar(select(User).where(User.email == args.email.lower()))
+            if not user:
+                raise SystemExit(f"No user with email {args.email}")
+            set_password(db, user, ask_password())
+            print(f"Password changed for {user.email}; existing sessions are logged out")
         elif args.command == "restore-user":
             try:
                 user = restore_user(db, args.email)
@@ -59,6 +79,15 @@ def main():
             backfill_derivatives(db, args.photo)
         else:  # reread-metadata; argparse rejects anything else
             reread_metadata(db, args.photo)
+
+
+def ask_password() -> str:
+    password = getpass("Password: ")
+    if problem := password_problem(password):
+        raise SystemExit(problem)
+    if password != getpass("Repeat password: "):
+        raise SystemExit("Passwords do not match")
+    return password
 
 
 def backfill_derivatives(db: Session, photo_id: int | None = None) -> int:

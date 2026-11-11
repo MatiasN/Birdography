@@ -23,11 +23,13 @@ compose.override.yml     dev extras, loaded automatically (backend hot reload)
 cp .env.example .env
 ```
 
-Set `POSTGRES_PASSWORD` and `SECRET_KEY` in `.env`. Generate a secret with:
+Set `POSTGRES_PASSWORD` and `SECRET_KEY` in `.env`. Generate each with:
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
+
+The backend, the CLI and alembic refuse to start while either still contains `change-me` (the `.env.example` placeholders) or `SECRET_KEY` is shorter than 32 characters.
 
 ## Running
 
@@ -41,8 +43,11 @@ docker compose up -d --build
 |----------|----------------------------|
 | Frontend | http://localhost:3000      |
 | API      | http://localhost:8000/docs |
+| Database | localhost:`POSTGRES_PORT`  |
 
-`compose.override.yml` is picked up automatically and reloads the backend on code changes. Use `docker compose -f docker-compose.yml up` to run without it.
+`compose.override.yml` is picked up automatically: it reloads the backend on code changes and publishes the API and the database, on `127.0.0.1` only. Use `docker compose -f docker-compose.yml up` to run as in production, where only the frontend is published (on `BIND_ADDRESS:HTTP_PORT`) and the API is reached through it at `/api/`.
+
+The backend runs as `PUID:PGID` (default 1000:1000) and the frontend's nginx as the unprivileged `nginx` user. The backend image's entrypoint (`backend/fix-permissions.sh`) starts as root only to hand the photo directory (`UPLOAD_DIR`, default `./data/photos`) to `PUID:PGID`, then runs the server as that user. A directory Docker just created as root, files written by an older image that ran as root, or a library copied from elsewhere all just work. Only entries owned by someone else are changed, so on later starts it changes nothing, and symlinks are changed themselves, never their targets. `docker compose exec backend …` bypasses the entrypoint and runs as root, but `python -m app.cli` switches to `PUID:PGID` before doing anything, so its files belong to the backend too; for anything else use `exec -u 1000 backend …`. Set `PUID`/`PGID` to your own `id -u`/`id -g` to keep the files owned by your host user. Started without compose (`docker run`), the backend still stops at startup with the `chown` command to run if the directory isn't writable.
 
 ### Frontend with hot reload
 
@@ -69,16 +74,43 @@ uv run uvicorn app.main:app --reload
 
 ## Settings
 
-Optional, in `.env` or the environment:
+In `.env` or the environment. A test (`tests/test_config.py`) fails when a backend setting is missing from this table or from `.env.example`.
+
+**Required**
+
+| Setting | |
+|---------|---|
+| `POSTGRES_DB`, `POSTGRES_USER` | database name and role, also used by the `db` container to create them |
+| `POSTGRES_PASSWORD` | database password; rejected while it contains `change-me` |
+| `SECRET_KEY` | signs session tokens; at least 32 characters, rejected while it contains `change-me`. Changing it logs everyone out |
+
+**Backend**
 
 | Setting | Default | |
 |---------|---------|---|
+| `POSTGRES_HOST` | `localhost` | database host when the backend runs outside Docker (always `db` inside) |
+| `POSTGRES_PORT` | 5432 | database port outside Docker; the dev override also publishes the database there |
+| `UPLOAD_DIR` | `data/photos` | photo storage. In Docker, the host directory mounted at `/data/photos` (default `./data/photos`), owned by `PUID:PGID` automatically |
+| `SESSION_DAYS` | 30 | how long a login lasts |
+| `SECURE_COOKIES` | `false` | send the session cookie only over HTTPS; set `true` when serving through an HTTPS proxy |
+| `ALLOW_REGISTRATION` | `false` | enable `POST /auth/register` |
 | `MAX_UPLOAD_MB` | 40 | limit for JPEG, PNG, TIFF, HEIC, WebP |
 | `MAX_RAW_UPLOAD_MB` | 70 | limit for RAW files |
 | `BACKGROUND_DERIVATIVES_MB` | 20 | above this size, previews and thumbnails are generated after the upload response |
-| `CLIENT_MAX_BODY_SIZE` | `75m` | nginx request limit (frontend container); keep it above `MAX_RAW_UPLOAD_MB` |
 | `EXIFTOOL_PATH` | `exiftool` | ExifTool binary, looked up on `PATH` |
 | `TRASH_DAYS` | 30 | trash retention |
+
+**Docker Compose and the frontend container**
+
+| Setting | Default | |
+|---------|---------|---|
+| `BIND_ADDRESS` | `0.0.0.0` | interface the web UI is published on: every interface, so other devices on the network can reach it; `127.0.0.1` for this machine only |
+| `HTTP_PORT` | 3000 | port the web UI is published on |
+| `PUID`, `PGID` | 1000 | user and group the backend runs as and the photo files belong to; not 0 |
+| `API_PORT` | 8000 | port the API is published on, on `127.0.0.1`, by the development override only |
+| `TRUSTED_PROXIES` | empty | addresses or CIDRs of a reverse proxy in front of the frontend (space or comma separated), whose `X-Forwarded-For` is then trusted |
+| `CLIENT_MAX_BODY_SIZE` | `75m` | nginx request limit; keep it above `MAX_RAW_UPLOAD_MB` |
+| `API_URL` | `http://localhost:8000` | where `npm run dev` proxies `/api` (Vite only) |
 
 `GET /health` reports the upload limits and the ExifTool version in use (`null` if it is missing).
 
@@ -94,7 +126,7 @@ python -m app.cli backfill-derivatives [--photo ID]
 
 Design and decisions: [plan 0002](docs/plans/0002-phase1-photo-upload-api.md).
 
-## First user
+## Accounts
 
 Registration is disabled by default. Create a user from the CLI:
 
@@ -104,7 +136,17 @@ docker compose exec backend python -m app.cli create-user you@example.com
 cd backend && uv run python -m app.cli create-user you@example.com
 ```
 
-Set `ALLOW_REGISTRATION=true` to enable `POST /auth/register`.
+Set `ALLOW_REGISTRATION=true` to enable `POST /auth/register`. New passwords need at least 10 characters (existing ones keep working).
+
+Sessions are signed tokens, sent as an HTTP-only cookie or, from `POST /auth/login`'s `access_token`, as a bearer token. A session lasts `SESSION_DAYS` days. `POST /auth/password` (`current_password`, `new_password`) changes the password and ends every other session of the account; the calling browser gets a new cookie, bearer clients log in again. There is no email flow, so a forgotten password is reset from the CLI, which also ends all sessions:
+
+```bash
+python -m app.cli set-password you@example.com
+```
+
+Failed logins are throttled: after 5 failures for one email, or 20 from one client address, within 15 minutes, `POST /auth/login` answers 429 with `Retry-After` without checking the password. Wrong current passwords in `POST /auth/password` count too. The counters live in the backend's memory, so a restart clears them; they assume the single uvicorn worker the image runs.
+
+The client address is the one nginx forwards. Behind another reverse proxy, set `TRUSTED_PROXIES` to its address, otherwise every request counts as coming from the proxy and 20 failures block logins for everyone.
 
 ## Trash
 

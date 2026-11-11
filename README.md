@@ -31,12 +31,14 @@ Self-hosted birding photography catalog with species information and map-based n
 ```bash
 git clone https://github.com/MatiasN/Birdography.git
 cd Birdography
-cp .env.example .env    # set POSTGRES_PASSWORD and SECRET_KEY
+cp .env.example .env    # set POSTGRES_PASSWORD and SECRET_KEY, see below
 docker compose -f docker-compose.yml up -d --build
 docker compose exec backend python -m app.cli create-user you@example.com
 ```
 
-Open http://localhost:3000 and log in.
+Generate `POSTGRES_PASSWORD` and `SECRET_KEY` with `python -c "import secrets; print(secrets.token_urlsafe(32))"`; the backend does not start with the placeholders.
+
+Open http://localhost:3000, or `http://<this machine's address>:3000` from another device, and log in. Only the web UI is published; the API is behind it at `/api/` and the database is not reachable from outside. Set `BIND_ADDRESS=127.0.0.1` to keep the UI to this machine. To serve it over HTTPS, put a reverse proxy in front and set `SECURE_COOKIES=true` and `TRUSTED_PROXIES`, see [Settings](CONTRIBUTING.md#settings).
 
 ## Development
 

@@ -13,4 +13,16 @@ COPY alembic.ini .
 COPY migrations ./migrations
 COPY app ./app
 
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+# Runs unprivileged as PUID:PGID; code and the venv stay root-owned and read-only to it. The entrypoint starts as
+# root only to hand the photo mount to that user, then drops to it. `docker compose exec` bypasses it and runs as
+# root: the CLI drops to PUID:PGID itself (app/cli.py).
+COPY --chmod=755 fix-permissions.sh /usr/local/bin/fix-permissions
+RUN groupadd --system --gid 1000 app \
+    && useradd --system --uid 1000 --gid app --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin app \
+    && mkdir -p /data/photos && chown app:app /data/photos
+ENV PUID=1000 PGID=1000 PYTHONDONTWRITEBYTECODE=1
+ENTRYPOINT ["fix-permissions"]
+
+# nginx (frontend container) is the only client and sets X-Forwarded-For; trusting any sender is safe only because
+# the backend port is not published (docker-compose.yml).
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips '*'"]

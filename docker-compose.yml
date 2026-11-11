@@ -3,8 +3,7 @@ services:
     image: postgis/postgis:17-3.5
     restart: unless-stopped
     env_file: .env
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+    # Not published: only the backend talks to it. compose.override.yml publishes it on localhost for development.
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
@@ -17,13 +16,23 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
+      # The entrypoint hands the photo directory to this user and group, then runs the backend as them.
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
       UPLOAD_DIR: /data/photos
-    ports:
-      - "8000:8000"
+    # Not published: nginx in the frontend container is its only client, and the login throttle trusts the client
+    # address nginx forwards. compose.override.yml publishes it on localhost for development.
     volumes:
       - ${UPLOAD_DIR:-./data/photos}:/data/photos
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      start_interval: 2s
+      retries: 3
     depends_on:
       db:
         condition: service_healthy
@@ -33,10 +42,13 @@ services:
     restart: unless-stopped
     environment:
       CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-75m}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
     ports:
-      - "3000:80"
+      # Reachable from other devices on the network by default; BIND_ADDRESS=127.0.0.1 keeps it to this machine.
+      - "${BIND_ADDRESS:-0.0.0.0}:${HTTP_PORT:-3000}:8080"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
 volumes:
   db-data:
