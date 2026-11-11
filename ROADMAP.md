@@ -52,3 +52,4 @@ Make it fast and useful in the field.
 - [ ] Batch and resumable uploads: several files per request, chunked transfer for large RAW files
 - [ ] Admin role: browse and restore everyone's trash, change upload limits from the UI instead of the environment
 - [ ] Scheduled `purge-trash` inside Docker (compose sidecar or cron in the backend image) instead of a host cron job
+- [ ] Prebuilt Docker images: built and pushed to a registry by CI (amd64 and arm64), `image:` in docker-compose.yml so installs can `docker compose pull` instead of building
