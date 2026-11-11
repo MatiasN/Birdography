@@ -28,6 +28,32 @@ def test_extension_tables_are_looked_up_once():
         assert include(None, "ix_photos_point", "index", True, None) is True
 
 
+def test_round_trip_migrates_existing_data():
+    command.downgrade(cfg, "0004")
+    with engine.begin() as conn:
+        user_id = conn.scalar(text("INSERT INTO users (email, password_hash) VALUES ('m@x.org', 'h') RETURNING id"))
+        species_id = conn.scalar(text("INSERT INTO species (scientific_name) VALUES ('Ardea cinerea') RETURNING id"))
+        photo_id = conn.scalar(
+            text(
+                "INSERT INTO photos (owner_id, file_path, taken_at, species_id) "
+                "VALUES (:owner, 'abc.nef', '2026-05-14 07:32:10+00', :species) RETURNING id"
+            ),
+            {"owner": user_id, "species": species_id},
+        )
+
+    command.upgrade(cfg, "head")
+    with engine.connect() as conn:
+        file = conn.execute(text("SELECT photo_id, kind, path, format, is_raw, size_bytes, sha256 FROM photo_files"))
+        assert file.one() == (photo_id, "original", "abc.nef", "nef", True, 0, f"pending:{photo_id}")
+
+    command.downgrade(cfg, "0004")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT file_path, species_id FROM photos")).one() == ("abc.nef", species_id)
+
+    command.downgrade(cfg, "base")
+    command.upgrade(cfg, "head")
+
+
 # Constraint names of databases created before the naming convention (PostgreSQL defaults).
 LEGACY_NAMES = {
     "species_pkey",

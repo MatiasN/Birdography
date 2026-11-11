@@ -1,5 +1,7 @@
 import io
+import itertools
 import os
+from pathlib import Path
 
 os.environ["POSTGRES_DB"] = os.environ.get("TEST_POSTGRES_DB", "birdography_test")
 os.environ.setdefault("SECRET_KEY", "test-secret")
@@ -16,6 +18,8 @@ from app.auth import create_user  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.db import engine  # noqa: E402
 from app.main import app  # noqa: E402
+
+TABLES = "photo_files, photos, locations, species, users"
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -36,7 +40,7 @@ def clean_tables():
     # Migration tests move the schema around; leave it at head even if one of them failed midway.
     command.upgrade(Config("alembic.ini"), "head")
     with engine.begin() as conn:
-        conn.execute(text("TRUNCATE photos, locations, species, users RESTART IDENTITY CASCADE"))
+        conn.execute(text(f"TRUNCATE {TABLES} RESTART IDENTITY CASCADE"))
 
 
 @pytest.fixture(autouse=True)
@@ -62,8 +66,20 @@ def client():
     return login("me@example.com")
 
 
-def make_jpeg(camera=None, taken_at=None, lat=None, lon=None) -> bytes:
+_counter = itertools.count()
+
+
+def stored() -> list[str]:
+    """Names of every file in the upload directory, relative to it."""
+    root = Path(settings.upload_dir)
+    return sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
+
+
+def make_jpeg(camera=None, taken_at=None, lat=None, lon=None, unique=True) -> bytes:
+    """A tiny JPEG with the given EXIF. Unique by default, since identical uploads are rejected."""
     exif = Image.Exif()
+    if unique:
+        exif[0x010E] = f"test image {next(_counter)}"  # ImageDescription
     if camera:
         exif[0x0110] = camera
     if taken_at:

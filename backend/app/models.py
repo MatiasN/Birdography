@@ -1,7 +1,19 @@
 from datetime import datetime
 
 from geoalchemy2 import Geography, Geometry, WKBElement
-from sqlalchemy import DateTime, ForeignKey, Index, MetaData, String, cast, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    MetaData,
+    String,
+    UniqueConstraint,
+    cast,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, column_property, mapped_column, relationship
 
@@ -12,6 +24,8 @@ NAMING_CONVENTION = {
     "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
     "pk": "pk_%(table_name)s",
 }
+
+FILE_KINDS = ("original", "preview", "thumbnail")
 
 
 class Base(DeclarativeBase):
@@ -55,7 +69,6 @@ class Photo(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    file_path: Mapped[str] = mapped_column(String(500), unique=True)
     taken_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     camera: Mapped[str | None] = mapped_column(String(200))
@@ -69,3 +82,38 @@ class Photo(Base):
 
     species: Mapped[Species | None] = relationship()
     location: Mapped[Location | None] = relationship()
+    files: Mapped[list[PhotoFile]] = relationship(
+        back_populates="photo", cascade="all, delete-orphan", lazy="selectin", order_by="PhotoFile.kind"
+    )
+
+    def file(self, kind: str) -> PhotoFile | None:
+        return next((f for f in self.files if f.kind == kind), None)
+
+
+class PhotoFile(Base):
+    __tablename__ = "photo_files"
+    __table_args__ = (
+        UniqueConstraint("photo_id", "kind", name="uq_photo_files_photo_id_kind"),
+        CheckConstraint("kind IN ('original', 'preview', 'thumbnail')", name="kind"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    photo_id: Mapped[int] = mapped_column(ForeignKey("photos.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(10))
+    path: Mapped[str] = mapped_column(String(500), unique=True)
+    original_filename: Mapped[str | None] = mapped_column(String(255))
+    mime_type: Mapped[str] = mapped_column(String(100))
+    format: Mapped[str] = mapped_column(String(10))
+    is_raw: Mapped[bool] = mapped_column(Boolean)
+    size_bytes: Mapped[int] = mapped_column(BigInteger)
+    # Unique across all users: the same file cannot be uploaded twice.
+    sha256: Mapped[str] = mapped_column(String(64), unique=True)
+    width: Mapped[int | None]
+    height: Mapped[int | None]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    photo: Mapped[Photo] = relationship(back_populates="files")
+
+    @property
+    def url(self) -> str:
+        return f"/photos/{self.photo_id}/file?kind={self.kind}"

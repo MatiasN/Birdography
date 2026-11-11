@@ -1,6 +1,7 @@
 import pytest
 
-from tests.conftest import make_jpeg
+from app import storage
+from tests.conftest import login, make_jpeg, stored
 
 
 def upload(client, data=None, name="bird.jpg"):
@@ -23,15 +24,57 @@ def test_upload_without_exif(client):
     assert photo["lat"] is None
 
 
+def test_upload_records_original_file(client):
+    data = make_jpeg()
+    photo = upload(client, data, name="DSC_0001.jpg").json()
+
+    (file,) = photo["files"]
+    assert file["kind"] == "original"
+    assert file["format"] == "jpeg"
+    assert file["is_raw"] is False
+    assert file["size_bytes"] == len(data)
+    assert (file["width"], file["height"]) == (8, 8)
+    assert file["url"] == f"/photos/{photo['id']}/file?kind=original"
+
+
+def test_raw_original_has_no_dimensions(client):
+    (file,) = upload(client, b"not really a NEF", name="DSC_0001.NEF").json()["files"]
+    assert (file["format"], file["is_raw"], file["width"], file["height"]) == ("nef", True, None, None)
+
+
+def test_duplicate_upload_is_rejected_for_everyone(client):
+    data = make_jpeg()
+    assert upload(client, data).status_code == 201
+    assert upload(client, data, name="again.jpg").status_code == 409
+
+    other = login("other@example.com")
+    assert upload(other, data).status_code == 409
+    assert other.get("/photos").json() == []
+    assert len(stored()) == 1
+
+
 def test_rejects_unsupported_type(client):
     assert upload(client, b"<html>", name="evil.html").status_code == 400
+    assert stored() == []
 
 
-def test_file_is_served(client):
+def test_file_is_served_with_fallback(client):
     data = make_jpeg()
     photo = upload(client, data).json()
-    response = client.get(f"/photos/{photo['id']}/file")
-    assert response.content == data
+    original = client.get(f"/photos/{photo['id']}/file", params={"kind": "original"})
+    assert original.content == data
+    assert original.headers["content-type"] == "image/jpeg"
+    # No preview or thumbnail yet: both fall back to the original.
+    assert client.get(f"/photos/{photo['id']}/file").content == data
+    assert client.get(f"/photos/{photo['id']}/file", params={"kind": "thumbnail"}).content == data
+    assert client.get(f"/photos/{photo['id']}/file", params={"kind": "huge"}).status_code == 422
+
+
+def test_file_missing_on_disk(client):
+    photo = upload(client).json()
+    for name in stored():
+        storage.remove(name)
+    assert client.get(f"/photos/{photo['id']}/file", params={"kind": "original"}).status_code == 404
 
 
 def test_list_filters_by_camera(client):
