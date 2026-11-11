@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from geoalchemy2 import WKTElement
 from PIL import Image, UnidentifiedImageError
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -66,7 +66,7 @@ class PhotoOut(BaseModel):
     lat: float | None
     lon: float | None
     species_ids: list[int]
-    location_id: int | None
+    location_id: int | None = Field(validation_alias="active_location_id")
     files: list[FileOut]
 
 
@@ -142,7 +142,11 @@ def list_photos(
     limit: int = Query(50, le=200),
     offset: int = 0,
 ):
-    query = select(Photo).where(Photo.owner_id == user.id).order_by(Photo.taken_at.desc().nulls_last(), Photo.id.desc())
+    query = (
+        select(Photo)
+        .where(Photo.owner_id == user.id, Photo.deleted_at.is_(None))
+        .order_by(Photo.taken_at.desc().nulls_last(), Photo.id.desc())
+    )
     if species_id is not None:
         query = query.where(Photo.species_links.any(PhotoSpecies.species_id == species_id))
     if camera:
@@ -167,13 +171,13 @@ def update_photo(photo_id: int, data: PhotoUpdate, db: DB, user: CurrentUser):
     if "location_id" in changes:
         if changes["location_id"] is not None:
             location = db.get(Location, changes["location_id"])
-            if not location or location.owner_id != user.id:
+            if not location or location.owner_id != user.id or location.deleted_at:
                 raise HTTPException(400, "Unknown location")
         photo.location_id = changes["location_id"]
 
     if "species_ids" in changes:
         ids = list(dict.fromkeys(changes["species_ids"] or []))
-        found = set(db.scalars(select(Species.id).where(Species.id.in_(ids))))
+        found = set(db.scalars(select(Species.id).where(Species.id.in_(ids), Species.deleted_at.is_(None))))
         if found != set(ids):
             raise HTTPException(400, "Unknown species")
         photo.species_links = [PhotoSpecies(species_id=sid, position=i) for i, sid in enumerate(ids)]
@@ -184,6 +188,14 @@ def update_photo(photo_id: int, data: PhotoUpdate, db: DB, user: CurrentUser):
     db.commit()
     db.refresh(photo)
     return photo
+
+
+@router.delete("/{photo_id}", status_code=204)
+def delete_photo(photo_id: int, db: DB, user: CurrentUser):
+    """Move the photo to the trash; it is purged after the retention period."""
+    photo = _get(db, user, photo_id)
+    photo.deleted_at = datetime.now(UTC)
+    db.commit()
 
 
 @router.get("/{photo_id}/file")
@@ -227,6 +239,6 @@ def _dimensions(path: Path) -> tuple[int | None, int | None]:
 
 def _get(db: Session, user: User, photo_id: int) -> Photo:
     photo = db.get(Photo, photo_id)
-    if not photo or photo.owner_id != user.id:
+    if not photo or photo.owner_id != user.id or photo.deleted_at:
         raise HTTPException(404, "Photo not found")
     return photo

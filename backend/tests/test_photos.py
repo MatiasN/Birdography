@@ -138,5 +138,15 @@ def test_user_overrides_taken_date(client):
     assert reverted["taken_at_manual"] is False
 
 
+def test_delete_moves_to_trash(client):
+    photo = upload(client).json()
+    assert client.delete(f"/photos/{photo['id']}").status_code == 204
+
+    assert client.get(f"/photos/{photo['id']}").status_code == 404
+    assert client.get("/photos").json() == []
+    # The file stays until the trash is purged.
+    assert len(stored()) == 1
+
+
 def test_missing_photo(client):
     assert client.get("/photos/999").status_code == 404

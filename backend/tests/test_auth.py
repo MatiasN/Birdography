@@ -25,6 +25,14 @@ def test_logout(client):
     assert client.get("/auth/me").status_code == 401
 
 
+def test_deleted_account_is_logged_out(client, anon):
+    token = anon.post("/auth/login", json={"email": "me@example.com", "password": "secret"}).json()["access_token"]
+    assert client.delete("/auth/me").status_code == 204
+    assert client.get("/auth/me").status_code == 401  # cookie cleared
+    assert anon.get("/auth/me", headers={"Authorization": f"Bearer {token}"}).status_code == 401  # token still valid
+    assert anon.post("/auth/login", json={"email": "me@example.com", "password": "secret"}).status_code == 401
+
+
 def test_registration_disabled_by_default(anon):
     assert anon.post("/auth/register", json={"email": "new@example.com", "password": "x"}).status_code == 403
 

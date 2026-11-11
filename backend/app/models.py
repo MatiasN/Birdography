@@ -95,7 +95,7 @@ class Photo(Base):
     location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id", ondelete="SET NULL"), index=True)
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
 
-    location: Mapped[Location | None] = relationship()
+    location: Mapped[Location | None] = relationship(lazy="joined")
     files: Mapped[list[PhotoFile]] = relationship(
         back_populates="photo", cascade="all, delete-orphan", lazy="selectin", order_by="PhotoFile.kind"
     )
@@ -105,7 +105,15 @@ class Photo(Base):
 
     @property
     def species_ids(self) -> list[int]:
-        return [link.species_id for link in self.species_links]
+        """Linked species, skipping those currently in the trash."""
+        return [link.species_id for link in self.species_links if link.species.deleted_at is None]
+
+    @property
+    def active_location_id(self) -> int | None:
+        """The location id, or None while the location is in the trash."""
+        if self.location is None or self.location.deleted_at is not None:
+            return None
+        return self.location_id
 
     def file(self, kind: str) -> PhotoFile | None:
         return next((f for f in self.files if f.kind == kind), None)

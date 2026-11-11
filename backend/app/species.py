@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import or_, select
@@ -29,7 +31,7 @@ def list_species(
     limit: int = Query(50, le=200),
     offset: int = 0,
 ):
-    query = select(Species).order_by(Species.scientific_name)
+    query = select(Species).where(Species.deleted_at.is_(None)).order_by(Species.scientific_name)
     if q:
         like = f"%{q}%"
         query = query.where(
@@ -41,7 +43,7 @@ def list_species(
 @router.get("/{species_id}", response_model=SpeciesOut)
 def get_species(species_id: int, db: DB):
     species = db.get(Species, species_id)
-    if not species:
+    if not species or species.deleted_at:
         raise HTTPException(404, "Species not found")
     return species
 
@@ -56,3 +58,13 @@ def create_species(data: SpeciesIn, db: DB):
         raise HTTPException(409, "Species already exists") from None
     db.refresh(species)
     return species
+
+
+@router.delete("/{species_id}", status_code=204)
+def delete_species(species_id: int, db: DB):
+    """Move the species to the trash. Photos keep their link and show it again if the species is restored."""
+    species = db.get(Species, species_id)
+    if not species or species.deleted_at:
+        raise HTTPException(404, "Species not found")
+    species.deleted_at = datetime.now(UTC)
+    db.commit()
