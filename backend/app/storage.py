@@ -8,6 +8,7 @@ from typing import BinaryIO
 from app.config import settings
 
 CHUNK = 1024 * 1024
+MB = 1024 * 1024
 # Uploads land here until their type is known.
 TEMP_DIR = ".tmp"
 
@@ -19,6 +20,12 @@ class Saved:
     sha256: str
 
 
+class TooLarge(Exception):
+    def __init__(self, max_bytes: int):
+        super().__init__(f"larger than {max_bytes} bytes")
+        self.max_bytes = max_bytes
+
+
 def path(name: str) -> Path:
     return Path(settings.upload_dir) / name
 
@@ -28,14 +35,14 @@ def temp_name() -> str:
     return f"{TEMP_DIR}/{uuid.uuid4().hex}"
 
 
-def save(file: BinaryIO, suffix: str) -> Saved:
+def save(file: BinaryIO, suffix: str, max_bytes: int | None = None) -> Saved:
     """Store the stream under a random final name, hashing it on the way."""
-    return _write(file, f"{uuid.uuid4().hex}{suffix}")
+    return _write(file, f"{uuid.uuid4().hex}{suffix}", max_bytes)
 
 
-def save_temp(file: BinaryIO) -> Saved:
+def save_temp(file: BinaryIO, max_bytes: int | None = None) -> Saved:
     """Store the stream under a random extension-less temp name; `finalize` moves it into place."""
-    return _write(file, temp_name())
+    return _write(file, temp_name(), max_bytes)
 
 
 def finalize(temp: str, suffix: str) -> str:
@@ -60,7 +67,7 @@ def remove(name: str) -> None:
     path(name).unlink(missing_ok=True)
 
 
-def _write(file: BinaryIO, name: str) -> Saved:
+def _write(file: BinaryIO, name: str, max_bytes: int | None) -> Saved:
     target = path(name)
     target.parent.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256()
@@ -69,6 +76,8 @@ def _write(file: BinaryIO, name: str) -> Saved:
         with target.open("wb") as out:
             while chunk := file.read(CHUNK):
                 size += len(chunk)
+                if max_bytes is not None and size > max_bytes:
+                    raise TooLarge(max_bytes)
                 out.write(chunk)
                 digest.update(chunk)
     except BaseException:

@@ -13,8 +13,10 @@ from sqlalchemy.orm import Session
 
 from app import exif, filetypes, storage
 from app.auth import CurrentUser
+from app.config import settings
 from app.db import DB
 from app.models import FILE_KINDS, Location, Photo, PhotoFile, PhotoSpecies, Species, User
+from app.storage import MB
 
 router = APIRouter(prefix="/photos", tags=["photos"])
 
@@ -64,7 +66,10 @@ class PhotoUpdate(BaseModel):
 @router.post("", response_model=PhotoOut, status_code=201)
 def upload(file: UploadFile, db: DB, user: CurrentUser):
     """Store one photo. The type comes from the content; the client's file name is only kept for display."""
-    temp = storage.save_temp(file.file)
+    try:
+        temp = storage.save_temp(file.file, max_bytes=settings.max_raw_upload_mb * MB)
+    except storage.TooLarge:
+        raise HTTPException(413, f"Files are limited to {settings.max_raw_upload_mb} MB") from None
     if temp.size == 0:
         storage.remove(temp.name)
         raise HTTPException(400, "Empty file")
@@ -73,6 +78,10 @@ def upload(file: UploadFile, db: DB, user: CurrentUser):
     if ftype is None:
         storage.remove(temp.name)
         raise HTTPException(415, "Unsupported file type")
+    limit_mb = settings.max_raw_upload_mb if ftype.is_raw else settings.max_upload_mb
+    if temp.size > limit_mb * MB:
+        storage.remove(temp.name)
+        raise HTTPException(413, f"{ftype.format.upper()} files are limited to {limit_mb} MB")
     if db.scalar(select(PhotoFile.id).where(PhotoFile.sha256 == temp.sha256)):
         storage.remove(temp.name)
         raise HTTPException(409, "This file has already been uploaded")
