@@ -92,7 +92,7 @@ def reread_metadata(db: Session, photo_id: int | None = None) -> int:
             print(f"photo {photo.id}: original missing, skipped")
             continue
         try:
-            meta = exif.read(storage.path(original.path))
+            meta = exif.read(storage.path(original.path), position=exif.manual_position(photo))
         except exiftool.ExifToolError as err:
             print(f"photo {photo.id}: {err}, skipped")
             continue

@@ -4,7 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -49,6 +49,7 @@ class PhotoOut(BaseModel):
     focal_length_mm: float | None
     lat: float | None
     lon: float | None
+    point_manual: bool
     species_ids: list[int]
     location_id: int | None = Field(validation_alias="active_location_id")
     files: list[FileOut]
@@ -60,6 +61,17 @@ class PhotoUpdate(BaseModel):
     # A naive value is the camera's local time; an offset-aware value also sets taken_offset_minutes.
     # Explicit null reverts to the EXIF date.
     taken_at_local: datetime | None = None
+    # Where the photo was taken, chosen on a map. Both or neither; explicit nulls revert to the camera's GPS.
+    lat: float | None = Field(None, ge=-90, le=90)
+    lon: float | None = Field(None, ge=-180, le=180)
+
+    @model_validator(mode="after")
+    def _coordinates_go_together(self):
+        if ("lat" in self.model_fields_set) != ("lon" in self.model_fields_set) or (self.lat is None) != (
+            self.lon is None
+        ):
+            raise ValueError("lat and lon go together")
+        return self
 
 
 @router.post("", response_model=PhotoOut, status_code=201)
@@ -185,8 +197,18 @@ def update_photo(photo_id: int, data: PhotoUpdate, db: DB, user: CurrentUser):
             raise HTTPException(400, "Unknown species")
         photo.species_links = [PhotoSpecies(species_id=sid, position=i) for i, sid in enumerate(ids)]
 
+    position = exif.manual_position(photo)
+    if "lat" in changes:
+        exif.set_point(photo, changes["lat"], changes["lon"], manual=True)
+        if changes["lat"] is None:  # back to the camera's GPS
+            meta = exif.parse(photo.exif or {})
+            exif.set_point(photo, meta["lat"], meta["lon"], manual=False)
+        position = (changes["lat"], changes["lon"]) if changes["lat"] is not None else None
+
     if "taken_at_local" in changes:
-        _set_taken_at(photo, changes["taken_at_local"])
+        _set_taken_at(photo, changes["taken_at_local"], position)
+    elif "lat" in changes and not photo.taken_at_manual:
+        exif.set_taken(photo, exif.parse(photo.exif or {}, position))  # the offset may follow the position
 
     db.commit()
     db.refresh(photo)
@@ -217,9 +239,9 @@ def get_file(
     return FileResponse(storage.path(file.path), media_type=file.mime_type)
 
 
-def _set_taken_at(photo: Photo, value: datetime | None) -> None:
+def _set_taken_at(photo: Photo, value: datetime | None, position: exif.Position | None) -> None:
     if value is None:
-        exif.set_taken(photo, exif.parse(photo.exif or {}))
+        exif.set_taken(photo, exif.parse(photo.exif or {}, position))
         return
     if value.tzinfo is not None:
         photo.taken_offset_minutes = int(value.utcoffset().total_seconds() // 60)

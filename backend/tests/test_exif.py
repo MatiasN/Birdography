@@ -121,12 +121,24 @@ def test_offset_derived_from_gps_when_the_camera_recorded_none():
     assert exif.parse({"ExifIFD:DateTimeOriginal": "2020:04:02 18:19:31"})["taken_offset_minutes"] is None
 
 
+def test_position_chosen_by_the_user_decides_the_offset():
+    tags = {"ExifIFD:DateTimeOriginal": "2026:05:14 07:32:10"}
+    meta = exif.parse(tags, position=(38.7, -9.1))
+    assert meta["taken_offset_minutes"] == 60 and (meta["lat"], meta["lon"]) == (None, None)
+    with_gps = {**tags, "Composite:GPSLatitude": 37.3, "Composite:GPSLongitude": -78.4}
+    meta = exif.parse(with_gps, position=(38.7, -9.1))
+    assert meta["taken_offset_minutes"] == 60  # the user's spot, not the camera's
+    assert (meta["lat"], meta["lon"]) == (37.3, -78.4)  # but the camera's GPS is still reported
+
+
 def test_apply_sets_columns_and_point():
     photo = Photo(taken_at_manual=False)
     exif.apply(photo, {**exif.parse(FULL), "exif": FULL})
     assert photo.camera == "Canon EOS R5" and photo.iso == 800 and photo.exif == FULL
     assert photo.taken_at_local == datetime(2026, 5, 14, 7, 32, 10) and photo.taken_at_manual is False
     assert photo.point.data == "POINT(-9.25 38.5)" and photo.point.srid == 4326
+
+    assert photo.point_manual is False
 
     exif.apply(photo, exif.empty())
     assert photo.point is None and photo.camera is None and photo.taken_at is None and photo.exif == {}
@@ -135,13 +147,23 @@ def test_apply_sets_columns_and_point():
 def test_apply_can_keep_what_the_user_set():
     manual = datetime(2024, 1, 1, 12, 0, 0)
     photo = Photo(taken_at_manual=True, taken_at_local=manual, taken_offset_minutes=0, taken_at=exif.instant(manual, 0))
+    exif.set_point(photo, 38.7, -9.1, manual=True)
     exif.apply(photo, {**exif.parse(FULL), "exif": FULL}, keep_manual=True)
     assert photo.camera == "Canon EOS R5"
     assert (photo.taken_at_local, photo.taken_offset_minutes, photo.taken_at_manual) == (manual, 0, True)
+    assert photo.point.data == "POINT(-9.1 38.7)" and photo.point_manual is True
 
-    photo.taken_at_manual = False
+    photo.taken_at_manual = photo.point_manual = False
     exif.apply(photo, {**exif.parse(FULL), "exif": FULL}, keep_manual=True)  # nothing to keep
     assert photo.taken_at_local == datetime(2026, 5, 14, 7, 32, 10)
+    assert photo.point.data == "POINT(-9.25 38.5)"
+
+
+def test_set_point_and_manual_position():
+    photo = Photo()
+    exif.set_point(photo, None, None, manual=True)  # nothing to set: not manual either
+    assert photo.point is None and photo.point_manual is False
+    assert exif.manual_position(photo) is None
 
 
 @pytest.mark.exiftool

@@ -5,7 +5,7 @@ file. Tags are keyed ExifTool style with group-1 prefixes (`ExifIFD:DateTimeOrig
 and numeric values unconverted (`-n`), see `exiftool.metadata`.
 
 The UTC offset of the taken time comes from the camera when it records one, otherwise from the time zone at the
-photo's position, from its GPS tags.
+photo's position: the camera's GPS, or the spot the user chose on the map (`position`).
 """
 
 from datetime import UTC, datetime, timedelta, timezone
@@ -18,14 +18,15 @@ from app import exiftool, timezones
 
 # These describe the file on disk (which is a temp file at upload time) or the tool, not the photo.
 DROPPED_GROUPS = ("System:", "ExifTool:")
+Position = tuple[float, float]  # lat, lon
 TAKEN_FIELDS = ("taken_at_local", "taken_offset_minutes", "taken_at")
 CAMERA_FIELDS = ("camera", "lens", "iso", "shutter_seconds", "aperture", "focal_length_mm")
 
 
-def read(path: Path) -> dict:
+def read(path: Path, position: Position | None = None) -> dict:
     """Parsed fields plus the raw tags under `exif`. Raises `exiftool.ExifToolError` when ExifTool cannot run."""
     tags = {k: v for k, v in exiftool.metadata(path).items() if not k.startswith(DROPPED_GROUPS)}
-    return {**parse(tags), "exif": tags}
+    return {**parse(tags, position), "exif": tags}
 
 
 def empty() -> dict:
@@ -33,14 +34,20 @@ def empty() -> dict:
     return {**parse({}), "exif": {}}
 
 
-def parse(tags: dict) -> dict:
-    """Catalog fields from ExifTool tags, as stored in `photos.exif`. Fields missing from the tags are None."""
+def parse(tags: dict, position: Position | None = None) -> dict:
+    """Catalog fields from ExifTool tags, as stored in `photos.exif`. Fields missing from the tags are None.
+
+    `position` is where the user says the photo was taken; it decides the offset when the camera recorded
+    none, instead of the GPS tags. `lat`/`lon` in the result are always the camera's.
+    """
     local = _local_time(_first(tags, "ExifIFD:DateTimeOriginal", "ExifIFD:CreateDate"))
     offset = _offset_minutes(tags.get("ExifIFD:OffsetTimeOriginal")) if local else None
     # Composite values are signed and cover EXIF, XMP and QuickTime GPS alike.
     lat, lon = _float(tags.get("Composite:GPSLatitude")), _float(tags.get("Composite:GPSLongitude"))
-    if local and offset is None and lat is not None and lon is not None:
-        offset = timezones.offset_minutes(lat, lon, local)
+    if position is None and lat is not None and lon is not None:
+        position = (lat, lon)
+    if local and offset is None and position is not None:
+        offset = timezones.offset_minutes(*position, local)
     lens_keys = ["ExifIFD:LensModel", *(k for k in tags if k.endswith(":LensModel"))]
     return {
         "taken_at_local": local,
@@ -58,17 +65,19 @@ def parse(tags: dict) -> dict:
 
 
 def apply(photo, meta: dict, *, keep_manual: bool = False) -> None:
-    """Write the fields from `read` onto a Photo. With `keep_manual`, a date the user set stays."""
+    """Write the fields from `read` onto a Photo. With `keep_manual`, a date or position the user set stays."""
     photo.exif = meta["exif"]
     for field in CAMERA_FIELDS:
         setattr(photo, field, meta[field])
-    set_point(photo, meta["lat"], meta["lon"])
+    if not (keep_manual and photo.point_manual):
+        set_point(photo, meta["lat"], meta["lon"], manual=False)
     if not (keep_manual and photo.taken_at_manual):
         set_taken(photo, meta)
 
 
-def set_point(photo, lat: float | None, lon: float | None) -> None:
+def set_point(photo, lat: float | None, lon: float | None, *, manual: bool) -> None:
     photo.point = WKTElement(f"POINT({lon} {lat})", srid=4326) if lat is not None and lon is not None else None
+    photo.point_manual = manual and photo.point is not None
 
 
 def set_taken(photo, meta: dict) -> None:
@@ -76,6 +85,11 @@ def set_taken(photo, meta: dict) -> None:
     for field in TAKEN_FIELDS:
         setattr(photo, field, meta[field])
     photo.taken_at_manual = False
+
+
+def manual_position(photo) -> Position | None:
+    """The position the user chose for the photo, if any, as stored."""
+    return (photo.lat, photo.lon) if photo.point_manual and photo.lat is not None else None
 
 
 def instant(local: datetime | None, offset_minutes: int | None) -> datetime | None:

@@ -162,3 +162,14 @@ def test_backfill_rebuilds_raw_preview(client):
     files = kinds(client.get(f"/photos/{photo['id']}").json())
     assert set(files) == {"original", "preview", "thumbnail"}
     assert (files["preview"]["width"], files["preview"]["height"]) == RAW_SAMPLES["dng"].preview_size
+
+
+def test_position_on_the_map_derives_the_offset_unless_the_camera_knew_it(client):
+    arw = upload(client, RAW_SAMPLES["arw"].read()).json()  # 2017, no offset recorded
+    assert (arw["taken_offset_minutes"], arw["lat"]) == (None, None)
+    placed = client.patch(f"/photos/{arw['id']}", json={"lat": 35.68, "lon": 139.69}).json()  # Tokyo
+    assert placed["taken_offset_minutes"] == 540 and placed["taken_at"] == "2017-07-13T07:58:28Z"
+
+    nef = upload(client, RAW_SAMPLES["nef"].read()).json()  # camera recorded +02:00
+    placed = client.patch(f"/photos/{nef['id']}", json={"lat": 35.68, "lon": 139.69}).json()
+    assert placed["taken_offset_minutes"] == 120 and placed["point_manual"] is True

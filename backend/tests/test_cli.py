@@ -105,6 +105,8 @@ def test_reread_metadata(monkeypatch, capsys, client):
     legacy = upload(client, make_jpeg(camera="Canon EOS R5", taken_at="2026:05:14 07:32:10", settings=settings))
     manual = upload(client, make_jpeg(camera="Nikon Z9", taken_at="2020:01:01 00:00:00"))
     client.patch(f"/photos/{manual['id']}", json={"taken_at_local": "2024-06-01T12:00:00"})
+    placed = upload(client, make_jpeg(camera="Nikon Z8", taken_at="2026:05:14 07:32:10"))
+    client.patch(f"/photos/{placed['id']}", json={"lat": 38.7, "lon": -9.1})
     gone = upload(client)
     with Session(engine) as db:
         # As stored by the exifread-based reader of earlier versions: keys the current parser does not know.
@@ -112,6 +114,7 @@ def test_reread_metadata(monkeypatch, capsys, client):
         photo.exif = {"EXIF DateTimeOriginal": "2026:05:14 07:32:10", "Image Model": "Canon EOS R5"}
         photo.camera = photo.iso = photo.taken_at_local = photo.taken_at = None
         db.get(Photo, manual["id"]).camera = None
+        db.get(Photo, placed["id"]).camera = None
         storage.remove(db.get(Photo, gone["id"]).file("original").path)
         db.commit()
 
@@ -125,11 +128,15 @@ def test_reread_metadata(monkeypatch, capsys, client):
         assert db.get(Photo, manual["id"]).camera is None  # out of scope of --photo
 
     out = run(monkeypatch, capsys, "reread-metadata")
-    assert f"photo {gone['id']}: original missing, skipped" in out and out.strip().endswith("2 photos updated")
+    assert f"photo {gone['id']}: original missing, skipped" in out and out.strip().endswith("3 photos updated")
     with Session(engine) as db:
         photo = db.get(Photo, manual["id"])
         assert photo.camera == "Nikon Z9"
         assert (photo.taken_at_local, photo.taken_at_manual) == (datetime(2024, 6, 1, 12), True)
+        photo = db.get(Photo, placed["id"])
+        assert photo.camera == "Nikon Z8"
+        assert (photo.lat, photo.lon, photo.point_manual) == (pytest.approx(38.7), pytest.approx(-9.1), True)
+        assert photo.taken_offset_minutes == 60  # derived from the spot the user chose
 
 
 def test_reread_metadata_skips_photos_exiftool_cannot_read(monkeypatch, capsys, client, tmp_path):
