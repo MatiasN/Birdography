@@ -16,8 +16,10 @@ Photo handling, species data and a first look at the map.
   - trash with 30-day retention for photos, locations, species and accounts; deleting a species or location unlinks its photos until restored
   - duplicate uploads rejected by content hash
   - naming convention for constraints and indexes, offline-capable Alembic, `alembic check` in CI
-- [ ] Photo upload API (JPEG and RAW)
-- [ ] EXIF extraction: GPS, timestamp, camera settings
+- [x] Photo upload API: JPEG, PNG, TIFF, HEIC, WebP and RAW (NEF, CR2, CR3, ARW, DNG, RAF, ORF, RW2, PEF); 40 MB limit, 70 MB for RAW; detection by content; RAW preview and thumbnails extracted with ExifTool, see [plan 0002](docs/plans/0002-phase1-photo-upload-api.md)
+- [ ] Real RAW test fixtures: small, permissively licensed samples (NEF, CR3, ARW, DNG; e.g. CC0 files from raw.pixls.us) under `backend/tests/fixtures/raw/`, covering content detection of extension-less files, embedded preview extraction and the RAW upload limit
+- [ ] EXIF extraction with ExifTool: GPS, local timestamp with offset, camera settings; offset derived from GPS position when the camera records none; RAW dimensions from `ImageWidth`/`ImageHeight`
+- [ ] RAW+JPEG pairs uploaded as one photo (the camera JPEG becomes the preview)
 - [ ] Photo catalog UI with filters by species, date and camera
 - [ ] Map with photo markers
 
@@ -46,6 +48,7 @@ Make it fast and useful in the field.
 - [ ] eBird CSV import/export; the import also fills `ebird_code` and `taxon_order` on species
 - [ ] PWA: offline cache, install to home screen
 - [ ] Full-text search across notes, tags, locations and names
-- [ ] Thumbnails, compression and external storage (NAS, S3-compatible)
-- [ ] Admin role: browse and restore everyone's trash
+- [ ] Compression and external storage (NAS, S3-compatible)
+- [ ] Batch and resumable uploads: several files per request, chunked transfer for large RAW files
+- [ ] Admin role: browse and restore everyone's trash, change upload limits from the UI instead of the environment
 - [ ] Scheduled `purge-trash` inside Docker (compose sidecar or cron in the backend image) instead of a host cron job

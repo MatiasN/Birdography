@@ -5,6 +5,7 @@
 - Docker with Docker Compose
 - [uv](https://docs.astral.sh/uv/) (Python 3.14 is installed by uv if missing)
 - Node.js 24
+- [ExifTool](https://exiftool.org/) when running the backend or its tests outside Docker (`apt install libimage-exiftool-perl`, `brew install exiftool`). It tells the TIFF-based RAW formats apart and extracts RAW previews; without it those uploads are stored as TIFF without a preview. Tests that need it are skipped when it is missing; `GET /health` reports the version in use.
 
 ## Project layout
 
@@ -72,7 +73,26 @@ Optional, in `.env` or the environment:
 
 | Setting | Default | |
 |---------|---------|---|
+| `MAX_UPLOAD_MB` | 40 | limit for JPEG, PNG, TIFF, HEIC, WebP |
+| `MAX_RAW_UPLOAD_MB` | 70 | limit for RAW files |
+| `BACKGROUND_DERIVATIVES_MB` | 20 | above this size, previews and thumbnails are generated after the upload response |
+| `CLIENT_MAX_BODY_SIZE` | `75m` | nginx request limit (frontend container); keep it above `MAX_RAW_UPLOAD_MB` |
+| `EXIFTOOL_PATH` | `exiftool` | ExifTool binary, looked up on `PATH` |
 | `TRASH_DAYS` | 30 | trash retention |
+
+`GET /health` reports the upload limits and the ExifTool version in use (`null` if it is missing).
+
+## Uploads
+
+`POST /photos` takes one file per request. The type is detected from the content, never the file name: unsupported content gets 415, files over the limit 413, a file already uploaded by anyone 409. ExifTool tells the TIFF-based RAW formats (NEF, ARW, DNG, PEF…) apart from plain TIFF; it trusts the extension for those, so detection runs on an extension-less temp file under `UPLOAD_DIR/.tmp`.
+
+Each photo stores up to three files: the `original`, a JPEG `preview` for formats browsers cannot show (RAW, HEIC, TIFF) and a 400 px `thumbnail`. Derived files keep only the orientation, no GPS or other metadata. If a preview or thumbnail cannot be made the upload still succeeds and the file endpoint falls back to the original. Regenerate missing ones with:
+
+```bash
+python -m app.cli backfill-derivatives [--photo ID]
+```
+
+Design and decisions: [plan 0002](docs/plans/0002-phase1-photo-upload-api.md).
 
 ## First user
 
@@ -93,7 +113,7 @@ Deleting a photo, location, species or account through the API moves it to the t
 ```bash
 python -m app.cli restore-user you@example.com   # account, with its photos and locations
 python -m app.cli restore photo 42                # or: location, species
-python -m app.cli purge-trash [--days N]          # permanently delete expired rows and their files
+python -m app.cli purge-trash [--days N]          # permanently delete expired rows, their files and stale upload temp files
 ```
 
 Run `purge-trash` periodically (cron on the host, for example). Nothing schedules it for you yet.
@@ -128,6 +148,8 @@ docker compose up -d db
 cd backend
 uv run pytest
 ```
+
+Tests marked `exiftool` are skipped when ExifTool is not installed. CI installs it and runs everything.
 
 ## Code style
 

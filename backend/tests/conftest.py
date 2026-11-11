@@ -1,11 +1,13 @@
 import io
 import itertools
 import os
+import shutil
 from pathlib import Path
 
 os.environ["POSTGRES_DB"] = os.environ.get("TEST_POSTGRES_DB", "birdography_test")
 os.environ.setdefault("SECRET_KEY", "test-secret")
 
+import pillow_heif  # noqa: E402
 import pytest  # noqa: E402
 from alembic import command  # noqa: E402
 from alembic.config import Config  # noqa: E402
@@ -21,6 +23,18 @@ from app.db import engine  # noqa: E402
 from app.main import app  # noqa: E402
 
 TABLES = "photo_species, photo_files, photos, locations, species, users"
+
+pillow_heif.register_heif_opener()
+
+
+def pytest_collection_modifyitems(items):
+    """Skip tests marked `exiftool` when the binary is missing; CI installs it, so nothing is skipped there."""
+    if shutil.which(settings.exiftool_path):
+        return
+    skip = pytest.mark.skip(reason=f"ExifTool not found at {settings.exiftool_path!r}")
+    for item in items:
+        if "exiftool" in item.keywords:
+            item.add_marker(skip)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -71,9 +85,20 @@ _counter = itertools.count()
 
 
 def stored() -> list[str]:
-    """Names of every file in the upload directory, relative to it."""
+    """Names of every file in the upload directory, temp files included, relative to it."""
     root = Path(settings.upload_dir)
     return sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file())
+
+
+def make_image(fmt: str, size=(8, 8), mode="RGB", **save_kwargs) -> bytes:
+    """A tiny image in any Pillow-writable format (PNG, WEBP, TIFF, HEIF, JPEG), unique by pixel content."""
+    n = next(_counter)
+    color = (n % 256, n // 256 % 256, 7) + ((255,) if mode == "RGBA" else ())
+    if mode == "L":
+        color = n % 256
+    buf = io.BytesIO()
+    Image.new(mode, size, color).save(buf, fmt, **save_kwargs)
+    return buf.getvalue()
 
 
 def make_jpeg(camera=None, taken_at=None, offset=None, lat=None, lon=None, settings=None, unique=True) -> bytes:

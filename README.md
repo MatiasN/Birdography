@@ -4,7 +4,7 @@ Self-hosted birding photography catalog with species information and map-based n
 
 ## Features
 
-- **Photo catalog**: upload photos, with date, camera settings and GPS read automatically from EXIF.
+- **Photo catalog**: upload JPEG, PNG, TIFF, HEIC, WebP or RAW photos (NEF, CR2, CR3, ARW, DNG, RAF, ORF, RW2, PEF), with date, camera settings and GPS read automatically from EXIF. File types are detected from content; RAW and HEIC photos get a browser-viewable preview, and every photo a thumbnail. Previews and thumbnails carry no GPS or other metadata. Upload limits are 40 MB, 70 MB for RAW, both configurable. Deleted items stay in a trash for 30 days.
 - **Map**: browse every spot you've photographed and filter species by location.
 - **Multi-language species**: English, Portuguese and scientific names.
 - **Gap tracking**: see which species you still need to photograph in a region.
@@ -20,6 +20,7 @@ Self-hosted birding photography catalog with species information and map-based n
 | Database | PostgreSQL + PostGIS          |
 | Frontend | React, Vite, Tailwind CSS     |
 | Maps     | Leaflet                       |
+| Images   | ExifTool, Pillow, pillow-heif |
 | Deploy   | Docker Compose                |
 
 ## Quick start

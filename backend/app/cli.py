@@ -5,7 +5,7 @@ from getpass import getpass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import exif, storage, trash
+from app import derivatives, exif, storage, trash
 from app.auth import create_user, restore_user
 from app.config import settings
 from app.db import engine
@@ -23,6 +23,8 @@ def main():
     purge = commands.add_parser("purge-trash", help="permanently delete what has been in the trash long enough")
     purge.add_argument("--days", type=int, default=settings.trash_days, help="retention in days (default TRASH_DAYS)")
     commands.add_parser("backfill-files", help="fill hash, size and camera settings for photos migrated from 0.1")
+    derived = commands.add_parser("backfill-derivatives", help="generate missing previews and thumbnails")
+    derived.add_argument("--photo", type=int, help="only this photo id")
     args = parser.parse_args()
 
     with Session(engine) as db:
@@ -47,9 +49,27 @@ def main():
             print(f"Restored {args.kind} {args.id}")
         elif args.command == "purge-trash":
             counts = trash.purge(db, retention=timedelta(days=args.days))
+            counts["temp files"] = storage.sweep_temp()
             print(", ".join(f"{n} {name}" for name, n in counts.items()) + " purged")
-        else:  # backfill-files; argparse rejects anything else
+        elif args.command == "backfill-files":
             backfill_files(db)
+        else:  # backfill-derivatives; argparse rejects anything else
+            backfill_derivatives(db, args.photo)
+
+
+def backfill_derivatives(db: Session, photo_id: int | None = None) -> int:
+    """Generate the previews and thumbnails photos are missing (older uploads, failed or lost background jobs)."""
+    query = select(Photo).where(Photo.deleted_at.is_(None))
+    if photo_id is not None:
+        query = query.where(Photo.id == photo_id)
+    updated = 0
+    for photo in db.scalars(query):
+        written = derivatives.build(photo)
+        if written:
+            db.commit()
+            updated += 1
+    print(f"{updated} photos updated")
+    return updated
 
 
 def backfill_files(db: Session) -> None:

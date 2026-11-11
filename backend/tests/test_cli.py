@@ -1,5 +1,7 @@
 """The command-line entry point, command by command."""
 
+import os
+import time
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -8,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app import cli, storage
 from app.db import engine
-from app.models import Photo, Species, User
+from app.models import Photo, PhotoFile, Species, User
 from tests.conftest import make_jpeg, stored
 
 
@@ -46,8 +48,15 @@ def test_restore(monkeypatch, capsys, client):
 def test_purge_trash(monkeypatch, capsys, client):
     photo = upload(client)
     client.delete(f"/photos/{photo['id']}")
+    stale = storage.temp_name()
+    storage.path(stale).parent.mkdir(parents=True, exist_ok=True)
+    storage.path(stale).write_bytes(b"partial")
+    os.utime(storage.path(stale), (time.time() - 7200, time.time() - 7200))
 
-    assert run(monkeypatch, capsys, "purge-trash").strip() == "0 photos, 0 locations, 0 species, 0 users purged"
+    assert (
+        run(monkeypatch, capsys, "purge-trash").strip()
+        == "0 photos, 0 locations, 0 species, 0 users, 1 temp files purged"
+    )
     with Session(engine) as db:
         db.get(Photo, photo["id"]).deleted_at = datetime.now(UTC) - timedelta(days=3)
         db.commit()
@@ -77,6 +86,17 @@ def test_backfill_files(monkeypatch, capsys, client):
         assert len(photo.file("original").sha256) == 64
         assert (photo.iso, float(photo.aperture)) == (800, 5.6)
         assert db.get(Photo, missing["id"]).file("original").sha256 == f"pending:{missing['id']}"
+
+
+def test_backfill_derivatives(monkeypatch, capsys, client):
+    photo = upload(client)
+    with Session(engine) as db:
+        thumbnail = db.scalar(select(PhotoFile).where(PhotoFile.photo_id == photo["id"], PhotoFile.kind == "thumbnail"))
+        storage.remove(thumbnail.path)
+        db.delete(thumbnail)
+        db.commit()
+    assert run(monkeypatch, capsys, "backfill-derivatives", "--photo", str(photo["id"])).strip() == "1 photos updated"
+    assert run(monkeypatch, capsys, "backfill-derivatives").strip() == "0 photos updated"
 
 
 def test_restorable_kinds_match_the_parser():

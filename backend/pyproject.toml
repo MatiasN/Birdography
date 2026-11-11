@@ -8,6 +8,7 @@ dependencies = [
     "fastapi>=0.115",
     "geoalchemy2>=0.15",
     "pillow>=13.0.0",
+    "pillow-heif>=1.8.1",
     "psycopg[binary]>=3.2",
     "pwdlib[argon2]>=0.3.1",
     "pydantic-settings>=2.6",
@@ -37,3 +38,4 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = ["exiftool: needs the ExifTool binary; skipped when it is not installed"]

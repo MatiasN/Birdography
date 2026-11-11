@@ -30,6 +30,30 @@ export type Photo = {
 
 export type User = { id: number; email: string };
 
+export type Health = {
+  status: string;
+  postgis: string;
+  exiftool: string | null;
+  limits: { upload_mb: number; raw_upload_mb: number };
+};
+
+export const RAW_EXTENSIONS = ["dng", "cr2", "cr3", "nef", "nrw", "arw", "orf", "rw2", "raf", "pef"];
+export const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "tif", "tiff", "webp", "heic", "heif", ...RAW_EXTENSIONS];
+
+const extension = (file: File) => file.name.split(".").pop()?.toLowerCase() ?? "";
+
+/** Client-side check against the server's limits, so a hopeless upload fails before it starts. */
+export function sizeProblem(file: File, limits: Health["limits"]): string | null {
+  const raw = RAW_EXTENSIONS.includes(extension(file));
+  const limitMb = raw ? limits.raw_upload_mb : limits.upload_mb;
+  if (file.size > limitMb * 1024 * 1024) {
+    return `${file.name}: ${raw ? "RAW" : "image"} files are limited to ${limitMb} MB`;
+  }
+  return null;
+}
+
+export const hasFile = (photo: Photo, kind: PhotoFile["kind"]) => photo.files.some((f) => f.kind === kind);
+
 export class ApiError extends Error {
   status: number;
 

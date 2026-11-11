@@ -1,37 +1,20 @@
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from geoalchemy2 import WKTElement
-from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import exif, storage
+from app import derivatives, exif, filetypes, storage
 from app.auth import CurrentUser
+from app.config import settings
 from app.db import DB
 from app.models import FILE_KINDS, Location, Photo, PhotoFile, PhotoSpecies, Species, User
-
-# Extension -> (format, MIME type, is RAW).
-FORMATS = {
-    ".jpg": ("jpeg", "image/jpeg", False),
-    ".jpeg": ("jpeg", "image/jpeg", False),
-    ".png": ("png", "image/png", False),
-    ".tif": ("tiff", "image/tiff", False),
-    ".tiff": ("tiff", "image/tiff", False),
-    ".dng": ("dng", "image/x-adobe-dng", True),
-    ".cr2": ("cr2", "image/x-canon-cr2", True),
-    ".cr3": ("cr3", "image/x-canon-cr3", True),
-    ".nef": ("nef", "image/x-nikon-nef", True),
-    ".arw": ("arw", "image/x-sony-arw", True),
-    ".orf": ("orf", "image/x-olympus-orf", True),
-    ".rw2": ("rw2", "image/x-panasonic-rw2", True),
-    ".raf": ("raf", "image/x-fuji-raf", True),
-}
+from app.storage import MB
 
 router = APIRouter(prefix="/photos", tags=["photos"])
 
@@ -79,23 +62,37 @@ class PhotoUpdate(BaseModel):
 
 
 @router.post("", response_model=PhotoOut, status_code=201)
-def upload(file: UploadFile, db: DB, user: CurrentUser):
-    suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in FORMATS:
-        raise HTTPException(400, f"Unsupported file type: {suffix or 'none'}")
-    fmt, mime_type, is_raw = FORMATS[suffix]
-
-    saved = storage.save(file.file, suffix)
-    if db.scalar(select(PhotoFile.id).where(PhotoFile.sha256 == saved.sha256)):
-        storage.remove(saved.name)
-        raise HTTPException(409, "This file has already been uploaded")
+def upload(file: UploadFile, background: BackgroundTasks, db: DB, user: CurrentUser):
+    """Store one photo. The type comes from the content; the client's file name is only kept for display."""
     try:
-        meta = exif.read(storage.path(saved.name))
+        temp = storage.save_temp(file.file, max_bytes=settings.max_raw_upload_mb * MB)
+    except storage.TooLarge:
+        raise HTTPException(413, f"Files are limited to {settings.max_raw_upload_mb} MB") from None
+    if temp.size == 0:
+        storage.remove(temp.name)
+        raise HTTPException(400, "Empty file")
+
+    ftype = filetypes.detect(storage.path(temp.name))
+    if ftype is None:
+        storage.remove(temp.name)
+        raise HTTPException(415, "Unsupported file type")
+    limit_mb = settings.max_raw_upload_mb if ftype.is_raw else settings.max_upload_mb
+    if temp.size > limit_mb * MB:
+        storage.remove(temp.name)
+        raise HTTPException(413, f"{ftype.format.upper()} files are limited to {limit_mb} MB")
+    if db.scalar(select(PhotoFile.id).where(PhotoFile.sha256 == temp.sha256, PhotoFile.kind == "original")):
+        storage.remove(temp.name)
+        raise HTTPException(409, "This file has already been uploaded")
+
+    name = storage.finalize(temp.name, ftype.ext)
+    written = [name]
+    try:
+        meta = exif.read(storage.path(name))
         point = None
         if meta["lat"] is not None and meta["lon"] is not None:
             point = WKTElement(f"POINT({meta['lon']} {meta['lat']})", srid=4326)
         # Pillow cannot open RAW; those get their dimensions once metadata is read with ExifTool.
-        width, height = (None, None) if is_raw else _dimensions(storage.path(saved.name))
+        width, height = (None, None) if ftype.is_raw else derivatives.dimensions(storage.path(name))
 
         photo = Photo(
             owner_id=user.id,
@@ -105,29 +102,34 @@ def upload(file: UploadFile, db: DB, user: CurrentUser):
             files=[
                 PhotoFile(
                     kind="original",
-                    path=saved.name,
+                    path=name,
                     original_filename=(file.filename or "")[:255] or None,
-                    mime_type=mime_type,
-                    format=fmt,
-                    is_raw=is_raw,
-                    size_bytes=saved.size,
-                    sha256=saved.sha256,
+                    mime_type=ftype.mime_type,
+                    format=ftype.format,
+                    is_raw=ftype.is_raw,
+                    size_bytes=temp.size,
+                    sha256=temp.sha256,
                     width=width,
                     height=height,
                 )
             ],
         )
         db.add(photo)
+        inline = temp.size <= settings.background_derivatives_mb * MB
+        if inline:
+            written += derivatives.build(photo)
         db.commit()
     except IntegrityError:
         db.rollback()
-        storage.remove(saved.name)
+        _remove_all(written)
         raise HTTPException(409, "This file has already been uploaded") from None
     except BaseException:
         db.rollback()
-        storage.remove(saved.name)
+        _remove_all(written)
         raise
     db.refresh(photo)
+    if not inline:
+        background.add_task(derivatives.process, photo.id)
     return photo
 
 
@@ -229,12 +231,9 @@ def _set_taken_at(photo: Photo, value: datetime | None) -> None:
     photo.taken_at_manual = True
 
 
-def _dimensions(path: Path) -> tuple[int | None, int | None]:
-    try:
-        with Image.open(path) as image:
-            return image.size
-    except UnidentifiedImageError, OSError:
-        return None, None
+def _remove_all(names: list[str]) -> None:
+    for name in names:
+        storage.remove(name)
 
 
 def _get(db: Session, user: User, photo_id: int) -> Photo:
