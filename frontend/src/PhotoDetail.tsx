@@ -53,7 +53,7 @@ export default function PhotoDetail({ photo, onChange, onClose }: Props) {
   const taken = photo.taken_at_local ? new Date(photo.taken_at_local).toLocaleString() : "No date";
 
   return (
-    <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4">
       {/* The backdrop: clicking it closes, like Escape and the Close button. */}
       <button
         type="button"

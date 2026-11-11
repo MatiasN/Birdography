@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import { routes } from "./routes";
-import { health, makePhoto, me, mockApi } from "./test/api";
+import { health, me, mockApi } from "./test/api";
 
 vi.mock("react-leaflet", () => import("./test/leaflet"));
 
@@ -36,9 +36,9 @@ describe("routes", () => {
   it("/map is the map, inside the layout", async () => {
     mockApi({
       "GET /auth/me": { body: me() },
-      "GET /photos?limit=200": { body: [makePhoto()] },
+      "GET /photos/points": { body: [{ id: 1, lat: 37, lon: -8 }] },
     });
     open("/map");
-    expect(await screen.findByTestId("marker")).toBeInTheDocument();
+    expect(await screen.findByTestId("map-marker")).toBeInTheDocument();
   });
 });

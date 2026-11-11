@@ -147,6 +147,14 @@ Both scripts call `docker compose`; set `COMPOSE` for anything else, for example
 
 `python -m app.cli verify-files [--checksums]` compares the catalog with the photo directory: files missing or with the wrong size (or hash, with `--checksums`, which reads everything) fail it, and files no row refers to are listed. Run it after restoring photos from your own file backup.
 
+## Map
+
+`GET /photos/points` returns every located photo of the user as `{id, lat, lon}`, newest first, with the same filters as `GET /photos` (`species_id`, `camera`, `taken_from`, `taken_to`) and no limit: about 40 bytes a photo, gzipped by nginx. The frontend clusters them in the browser with [supercluster](https://github.com/mapbox/supercluster) (`src/clusters.ts`):
+
+- Every marker is `MARKER_PX` (40 px) wide: a round thumbnail for one photo, a count for a group.
+- Markers whose centres are closer than `JOIN_PX` (1.5 markers) join into one. supercluster places groups at the average position of their photos, which can drift onto a neighbour, so a last pass joins anything still overlapping into the larger marker. No two drawn markers overlap at any zoom; a test checks this over random photo clouds at every zoom level.
+- Clicking a group (or Enter/Space on a focused one) opens a panel with all its photos, newest first, 60 at a time; a photo opens its details. "Zoom in" flies to the level where the group splits. Photos at the same spot never split, so their panel has no zoom button.
+
 ## Uploads
 
 `POST /photos` takes one file per request. The type is detected from the content, never the file name: unsupported content gets 415, files over the limit 413, a file already uploaded by anyone 409. ExifTool tells the TIFF-based RAW formats (NEF, ARW, DNG, PEF…) apart from plain TIFF; it trusts the extension for those, so detection runs on an extension-less temp file under `UPLOAD_DIR/.tmp`.

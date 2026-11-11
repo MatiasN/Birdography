@@ -6,7 +6,7 @@ Self-hosted birding photography catalog with species information and map-based n
 
 - **Photo catalog**: upload JPEG, PNG, TIFF, HEIC, WebP or RAW photos (NEF, CR2, CR3, ARW, DNG, RAF, ORF, RW2, PEF), with date, camera settings and GPS read automatically from EXIF. File types are detected from content; RAW and HEIC photos get a browser-viewable preview, and every photo a thumbnail. Previews and thumbnails carry no GPS or other metadata. Upload limits are 40 MB, 70 MB for RAW, both configurable. Deleted items stay in a trash for 30 days.
 - **Where and when**: the time zone of each photo comes from the camera, or from the time zone at its position when the camera records none; photos without GPS can be placed on a map by hand, and that spot sets the time zone too.
-- **Map**: browse every spot you've photographed and filter species by location.
+- **Map**: browse every spot you've photographed. Photos close together join into one marker with a count; click it to see them all, or zoom in to split it. Filter species by location.
 - **Multi-language species**: English, Portuguese and scientific names.
 - **Gap tracking**: see which species you still need to photograph in a region.
 - **Close to me**: search a place or share your location to see species likely to be there.

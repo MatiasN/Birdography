@@ -114,8 +114,9 @@ export const json = (method: string, body: unknown): RequestInit => ({
 });
 
 /** Smallest browser-viewable file; the API falls back to larger kinds and finally the original. */
-export const photoUrl = (photo: Photo, kind: PhotoFile["kind"] = "thumbnail") =>
-  `/api/photos/${photo.id}/file?kind=${kind}`;
+export const fileUrl = (photoId: number, kind: PhotoFile["kind"] = "thumbnail") =>
+  `/api/photos/${photoId}/file?kind=${kind}`;
+export const photoUrl = (photo: Photo, kind: PhotoFile["kind"] = "thumbnail") => fileUrl(photo.id, kind);
 
 /** The date the photo was taken as the camera (or the user) recorded it, without time zone shifts. */
 export const takenDate = (photo: Photo) =>
