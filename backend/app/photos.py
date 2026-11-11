@@ -1,8 +1,9 @@
 import logging
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import select
@@ -148,31 +149,50 @@ def upload(file: UploadFile, background: BackgroundTasks, db: DB, user: CurrentU
     return photo
 
 
+@dataclass
+class PhotoFilters:
+    """The filters shared by the photo list and the map points."""
+
+    species_id: int | None = None
+    camera: str | None = None
+    taken_from: datetime | None = None
+    taken_to: datetime | None = None
+
+    def apply(self, query, user: User):
+        query = query.where(Photo.owner_id == user.id, Photo.deleted_at.is_(None))
+        if self.species_id is not None:
+            query = query.where(Photo.species_links.any(PhotoSpecies.species_id == self.species_id))
+        if self.camera:
+            query = query.where(Photo.camera == self.camera)
+        if self.taken_from:
+            query = query.where(Photo.taken_at >= self.taken_from)
+        if self.taken_to:
+            query = query.where(Photo.taken_at <= self.taken_to)
+        return query
+
+
+Filters = Annotated[PhotoFilters, Depends()]
+
+
+class PointOut(BaseModel):
+    id: int
+    lat: float
+    lon: float
+
+
 @router.get("", response_model=list[PhotoOut])
-def list_photos(
-    db: DB,
-    user: CurrentUser,
-    species_id: int | None = None,
-    camera: str | None = None,
-    taken_from: datetime | None = None,
-    taken_to: datetime | None = None,
-    limit: int = Query(50, le=200),
-    offset: int = 0,
-):
-    query = (
-        select(Photo)
-        .where(Photo.owner_id == user.id, Photo.deleted_at.is_(None))
-        .order_by(Photo.taken_at.desc().nulls_last(), Photo.id.desc())
-    )
-    if species_id is not None:
-        query = query.where(Photo.species_links.any(PhotoSpecies.species_id == species_id))
-    if camera:
-        query = query.where(Photo.camera == camera)
-    if taken_from:
-        query = query.where(Photo.taken_at >= taken_from)
-    if taken_to:
-        query = query.where(Photo.taken_at <= taken_to)
+def list_photos(db: DB, user: CurrentUser, filters: Filters, limit: int = Query(50, le=200), offset: int = 0):
+    query = filters.apply(select(Photo), user).order_by(Photo.taken_at.desc().nulls_last(), Photo.id.desc())
     return db.scalars(query.limit(limit).offset(offset)).all()
+
+
+@router.get("/points", response_model=list[PointOut])
+def list_points(db: DB, user: CurrentUser, filters: Filters):
+    """Every located photo, as only its id and position, for the map to cluster. No limit: about 40 bytes a photo
+    as JSON, so even 50 000 photos are ~2 MB before compression. Newest first, like the list."""
+    query = filters.apply(select(Photo.id, Photo.lat, Photo.lon), user).where(Photo.point.is_not(None))
+    query = query.order_by(Photo.taken_at.desc().nulls_last(), Photo.id.desc())
+    return [PointOut(id=row.id, lat=row.lat, lon=row.lon) for row in db.execute(query)]
 
 
 @router.get("/{photo_id}", response_model=PhotoOut)

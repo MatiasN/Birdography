@@ -37,3 +37,17 @@ def test_health_reports_upload_limits(anon, monkeypatch):
     monkeypatch.setattr(settings, "max_upload_mb", 12)
     monkeypatch.setattr(settings, "max_raw_upload_mb", 34)
     assert anon.get("/health").json()["limits"] == {"upload_mb": 12, "raw_upload_mb": 34}
+
+
+def test_startup_fails_when_uploads_are_not_writable(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+
+    from app.config import settings
+    from app.main import app
+
+    blocker = tmp_path / "not-a-directory"
+    blocker.write_text("")
+    monkeypatch.setattr(settings, "upload_dir", str(blocker))
+    with pytest.raises(RuntimeError, match=r"UPLOAD_DIR .*not-a-directory is not writable by uid \d+.*sudo chown -R"):
+        with TestClient(app):
+            pass

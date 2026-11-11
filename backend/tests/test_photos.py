@@ -252,3 +252,49 @@ def test_delete_moves_to_trash(client):
 
 def test_missing_photo(client):
     assert client.get("/photos/999").status_code == 404
+
+
+def test_points_are_every_located_photo_of_the_user(client):
+    located = upload(client, make_jpeg(lat=37.0, lon=-8.0)).json()
+    placed = upload(client).json()
+    client.patch(f"/photos/{placed['id']}", json={"lat": 38.5, "lon": -9.25})
+    upload(client)  # no position: not on the map
+    gone = upload(client, make_jpeg(lat=1.0, lon=1.0)).json()
+    client.delete(f"/photos/{gone['id']}")
+    login("other@example.com").post("/photos", files={"file": ("x.jpg", make_jpeg(lat=5.0, lon=5.0), "image/jpeg")})
+
+    points = client.get("/photos/points").json()
+    by_id = {p["id"]: p for p in points}
+    assert set(by_id) == {located["id"], placed["id"]}
+    assert by_id[placed["id"]] == {"id": placed["id"], "lat": 38.5, "lon": -9.25}
+    assert by_id[located["id"]]["lat"] == pytest.approx(37.0)
+    assert by_id[located["id"]]["lon"] == pytest.approx(-8.0)
+
+
+def test_points_have_no_limit(client):
+    from sqlalchemy import update
+    from sqlalchemy.orm import Session
+
+    from app.db import engine
+    from app.models import Photo
+
+    for _ in range(205):
+        upload(client)
+    with Session(engine) as db:
+        db.execute(update(Photo).values(point="SRID=4326;POINT(-8 37)"))
+        db.commit()
+    assert len(client.get("/photos/points").json()) == 205
+
+
+@pytest.mark.exiftool
+def test_points_use_the_list_filters(client):
+    upload(client, make_jpeg(camera="Canon EOS R5", lat=37.0, lon=-8.0, taken_at="2026:01:10 08:00:00"))
+    nikon = upload(client, make_jpeg(camera="Nikon Z9", lat=38.0, lon=-9.0, taken_at="2026:06:10 08:00:00")).json()
+
+    assert [p["id"] for p in client.get("/photos/points", params={"camera": "Nikon Z9"}).json()] == [nikon["id"]]
+    from_march = client.get("/photos/points", params={"taken_from": "2026-03-01T00:00:00Z"}).json()
+    assert [p["id"] for p in from_march] == [nikon["id"]]
+
+
+def test_points_need_login(anon):
+    assert anon.get("/photos/points").status_code == 401

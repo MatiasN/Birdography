@@ -6,7 +6,7 @@ Self-hosted birding photography catalog with species information and map-based n
 
 - **Photo catalog**: upload JPEG, PNG, TIFF, HEIC, WebP or RAW photos (NEF, CR2, CR3, ARW, DNG, RAF, ORF, RW2, PEF), with date, camera settings and GPS read automatically from EXIF. File types are detected from content; RAW and HEIC photos get a browser-viewable preview, and every photo a thumbnail. Previews and thumbnails carry no GPS or other metadata. Upload limits are 40 MB, 70 MB for RAW, both configurable. Deleted items stay in a trash for 30 days.
 - **Where and when**: the time zone of each photo comes from the camera, or from the time zone at its position when the camera records none; photos without GPS can be placed on a map by hand, and that spot sets the time zone too.
-- **Map**: browse every spot you've photographed and filter species by location.
+- **Map**: browse every spot you've photographed. Photos close together join into one marker with a count; click it to see them all, or zoom in to split it. Filter species by location.
 - **Multi-language species**: English, Portuguese and scientific names.
 - **Gap tracking**: see which species you still need to photograph in a region.
 - **Close to me**: search a place or share your location to see species likely to be there.
@@ -31,12 +31,16 @@ Self-hosted birding photography catalog with species information and map-based n
 ```bash
 git clone https://github.com/MatiasN/Birdography.git
 cd Birdography
-cp .env.example .env    # set POSTGRES_PASSWORD and SECRET_KEY
+cp .env.example .env    # set POSTGRES_PASSWORD and SECRET_KEY, see below
 docker compose -f docker-compose.yml up -d --build
 docker compose exec backend python -m app.cli create-user you@example.com
 ```
 
-Open http://localhost:3000 and log in.
+Generate `POSTGRES_PASSWORD` and `SECRET_KEY` with `python -c "import secrets; print(secrets.token_urlsafe(32))"`; the backend does not start with the placeholders.
+
+Open http://localhost:3000, or `http://<this machine's address>:3000` from another device, and log in. Only the web UI is published; the API is behind it at `/api/` and the database is not reachable from outside. Set `BIND_ADDRESS=127.0.0.1` to keep the UI to this machine. To serve it over HTTPS, put a reverse proxy in front and set `SECURE_COOKIES=true` and `TRUSTED_PROXIES`, see [Settings](CONTRIBUTING.md#settings).
+
+Photos are stored in `./data/photos` (`UPLOAD_DIR`) and the database in the `db-data` volume. Back both up with `scripts/backup.sh` and bring them back with `scripts/restore.sh`, see [Backups](CONTRIBUTING.md#backups).
 
 ## Development
 

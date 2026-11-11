@@ -13,6 +13,7 @@
 backend/    FastAPI app, Alembic migrations, pytest suite
 frontend/   React + Vite app
 docs/plans/ Design plans for roadmap items
+scripts/    backup.sh and restore.sh, run on the Docker host
 docker-compose.yml       db, backend, frontend
 compose.override.yml     dev extras, loaded automatically (backend hot reload)
 ```
@@ -23,11 +24,13 @@ compose.override.yml     dev extras, loaded automatically (backend hot reload)
 cp .env.example .env
 ```
 
-Set `POSTGRES_PASSWORD` and `SECRET_KEY` in `.env`. Generate a secret with:
+Set `POSTGRES_PASSWORD` and `SECRET_KEY` in `.env`. Generate each with:
 
 ```bash
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
+
+The backend, the CLI and alembic refuse to start while either still contains `change-me` (the `.env.example` placeholders) or `SECRET_KEY` is shorter than 32 characters.
 
 ## Running
 
@@ -41,8 +44,11 @@ docker compose up -d --build
 |----------|----------------------------|
 | Frontend | http://localhost:3000      |
 | API      | http://localhost:8000/docs |
+| Database | localhost:`POSTGRES_PORT`  |
 
-`compose.override.yml` is picked up automatically and reloads the backend on code changes. Use `docker compose -f docker-compose.yml up` to run without it.
+`compose.override.yml` is picked up automatically: it reloads the backend on code changes and publishes the API and the database, on `127.0.0.1` only. Use `docker compose -f docker-compose.yml up` to run as in production, where only the frontend is published (on `BIND_ADDRESS:HTTP_PORT`) and the API is reached through it at `/api/`.
+
+The backend runs as `PUID:PGID` (default 1000:1000) and the frontend's nginx as the unprivileged `nginx` user. The backend image's entrypoint (`backend/fix-permissions.sh`) starts as root only to hand the photo directory (`UPLOAD_DIR`, default `./data/photos`) to `PUID:PGID`, then runs the server as that user. A directory Docker just created as root, files written by an older image that ran as root, or a library copied from elsewhere all just work. Only entries owned by someone else are changed, so on later starts it changes nothing, and symlinks are changed themselves, never their targets. `docker compose exec backend …` bypasses the entrypoint and runs as root, but `python -m app.cli` switches to `PUID:PGID` before doing anything, so its files belong to the backend too; for anything else use `exec -u 1000 backend …`. Set `PUID`/`PGID` to your own `id -u`/`id -g` to keep the files owned by your host user. Started without compose (`docker run`), the backend still stops at startup with the `chown` command to run if the directory isn't writable.
 
 ### Frontend with hot reload
 
@@ -69,18 +75,85 @@ uv run uvicorn app.main:app --reload
 
 ## Settings
 
-Optional, in `.env` or the environment:
+In `.env` or the environment. A test (`tests/test_config.py`) fails when a backend setting is missing from this table or from `.env.example`.
+
+**Required**
+
+| Setting | |
+|---------|---|
+| `POSTGRES_DB`, `POSTGRES_USER` | database name and role, also used by the `db` container to create them |
+| `POSTGRES_PASSWORD` | database password; rejected while it contains `change-me` |
+| `SECRET_KEY` | signs session tokens; at least 32 characters, rejected while it contains `change-me`. Changing it logs everyone out |
+
+**Backend**
 
 | Setting | Default | |
 |---------|---------|---|
+| `POSTGRES_HOST` | `localhost` | database host when the backend runs outside Docker (always `db` inside) |
+| `POSTGRES_PORT` | 5432 | database port outside Docker; the dev override also publishes the database there |
+| `UPLOAD_DIR` | `data/photos` | photo storage. In Docker, the host directory mounted at `/data/photos` (default `./data/photos`), owned by `PUID:PGID` automatically |
+| `SESSION_DAYS` | 30 | a session ends after this many days without a visit (browser sessions renew daily while in use) |
+| `SESSION_MAX_DAYS` | 90 | hard cap: a session never outlives this, counted from the login |
+| `SECURE_COOKIES` | `false` | send the session cookie only over HTTPS; set `true` when serving through an HTTPS proxy |
+| `ALLOW_REGISTRATION` | `false` | enable `POST /auth/register` |
 | `MAX_UPLOAD_MB` | 40 | limit for JPEG, PNG, TIFF, HEIC, WebP |
 | `MAX_RAW_UPLOAD_MB` | 70 | limit for RAW files |
 | `BACKGROUND_DERIVATIVES_MB` | 20 | above this size, previews and thumbnails are generated after the upload response |
-| `CLIENT_MAX_BODY_SIZE` | `75m` | nginx request limit (frontend container); keep it above `MAX_RAW_UPLOAD_MB` |
 | `EXIFTOOL_PATH` | `exiftool` | ExifTool binary, looked up on `PATH` |
 | `TRASH_DAYS` | 30 | trash retention |
 
+**Docker Compose and the frontend container**
+
+| Setting | Default | |
+|---------|---------|---|
+| `BIND_ADDRESS` | `0.0.0.0` | interface the web UI is published on: every interface, so other devices on the network can reach it; `127.0.0.1` for this machine only |
+| `HTTP_PORT` | 3000 | port the web UI is published on |
+| `PUID`, `PGID` | 1000 | user and group the backend runs as and the photo files belong to; not 0 |
+| `API_PORT` | 8000 | port the API is published on, on `127.0.0.1`, by the development override only |
+| `TRUSTED_PROXIES` | empty | addresses or CIDRs of a reverse proxy in front of the frontend (space or comma separated), whose `X-Forwarded-For` is then trusted |
+| `CLIENT_MAX_BODY_SIZE` | `75m` | nginx request limit; keep it above `MAX_RAW_UPLOAD_MB` |
+| `API_URL` | `http://localhost:8000` | where `npm run dev` proxies `/api` (Vite only) |
+
 `GET /health` reports the upload limits and the ExifTool version in use (`null` if it is missing).
+
+## Backups
+
+All state is in two places: the database (`db-data` volume) and the photo files (`UPLOAD_DIR`). Both scripts run on the Docker host, from anywhere, against the running stack:
+
+```bash
+scripts/backup.sh [--db-only] [--keep N] [DEST]   # DEST defaults to ./backups
+scripts/restore.sh [--force] DEST/birdography-YYYYmmdd-HHMMSS
+```
+
+A backup is a directory with `db.dump` (`pg_dump`, run inside the db container so versions always match), `photos.tar` and `manifest.json` (date, schema revision, counts, SHA-256 of both files). It is readable by its owner only, since the dump holds password hashes. The photos are archived after the dump, so every file the dump refers to is in the archive. Avoid running `purge-trash` during a backup, since it deletes files.
+
+`--db-only` skips the photos. Photo files are written once under random names and never changed, so incremental tools (restic, borg, rsync, NAS snapshots) back them up well; above a few tens of GB, prefer `--db-only` plus one of those on `UPLOAD_DIR`. `--keep N` then deletes all but the newest N backups in `DEST`. Schedule it with cron or a systemd timer, for example nightly:
+
+```cron
+30 3 * * * cd /srv/birdography && scripts/backup.sh --keep 14 /mnt/backups/birdography
+```
+
+`restore.sh`:
+
+1. Checks the manifest checksums and refuses a backup from a newer version (a schema revision these migrations don't know).
+2. Refuses to replace an install that has accounts, unless `--force` is given.
+3. Restores into a side database and only swaps it in once `pg_restore` succeeded, so a failed restore changes nothing.
+4. Moves the current photo files to `.pre-restore-<date>/` inside the photo directory (never deletes them) and unpacks the archive.
+5. Restarts the backend, which migrates an older backup to the current schema, and runs `verify-files`.
+
+On a new machine, start the stack first (`docker compose up -d`), then restore. Delete `.pre-restore-*` once you have checked the result.
+
+Both scripts call `docker compose`; set `COMPOSE` for anything else, for example `COMPOSE="docker compose -p birdography" scripts/backup.sh`.
+
+`python -m app.cli verify-files [--checksums]` compares the catalog with the photo directory: files missing or with the wrong size (or hash, with `--checksums`, which reads everything) fail it, and files no row refers to are listed. Run it after restoring photos from your own file backup.
+
+## Map
+
+`GET /photos/points` returns every located photo of the user as `{id, lat, lon}`, newest first, with the same filters as `GET /photos` (`species_id`, `camera`, `taken_from`, `taken_to`) and no limit: about 40 bytes a photo, gzipped by nginx. The frontend clusters them in the browser with [supercluster](https://github.com/mapbox/supercluster) (`src/clusters.ts`):
+
+- Every marker is `MARKER_PX` (40 px) wide: a round thumbnail for one photo, a count for a group.
+- Markers whose centres are closer than `JOIN_PX` (1.5 markers) join into one. supercluster places groups at the average position of their photos, which can drift onto a neighbour, so a last pass joins anything still overlapping into the larger marker. No two drawn markers overlap at any zoom; a test checks this over random photo clouds at every zoom level.
+- Clicking a group (or Enter/Space on a focused one) opens a panel with all its photos, newest first, 60 at a time; a photo opens its details. "Zoom in" flies to the level where the group splits. Photos at the same spot never split, so their panel has no zoom button.
 
 ## Uploads
 
@@ -94,7 +167,7 @@ python -m app.cli backfill-derivatives [--photo ID]
 
 Design and decisions: [plan 0002](docs/plans/0002-phase1-photo-upload-api.md).
 
-## First user
+## Accounts
 
 Registration is disabled by default. Create a user from the CLI:
 
@@ -104,7 +177,17 @@ docker compose exec backend python -m app.cli create-user you@example.com
 cd backend && uv run python -m app.cli create-user you@example.com
 ```
 
-Set `ALLOW_REGISTRATION=true` to enable `POST /auth/register`.
+Set `ALLOW_REGISTRATION=true` to enable `POST /auth/register`. New passwords need at least 10 characters (existing ones keep working).
+
+Sessions are signed tokens, sent as an HTTP-only cookie or, from `POST /auth/login`'s `access_token`, as a bearer token. Browser sessions slide: the cookie is re-issued with a fresh `SESSION_DAYS` expiry about once a day while it is used, up to `SESSION_MAX_DAYS` after the login, so an active user stays logged in and an idle or stolen cookie still dies. Bearer tokens keep their original expiry. `POST /auth/login` and `GET /auth/me` return `expires_at`; the frontend uses it to return to the login page when the session ends. `POST /auth/password` (`current_password`, `new_password`) changes the password and ends every other session of the account; the calling browser gets a new cookie, bearer clients log in again. There is no email flow, so a forgotten password is reset from the CLI, which also ends all sessions:
+
+```bash
+python -m app.cli set-password you@example.com
+```
+
+Failed logins are throttled: after 5 failures for one email, or 20 from one client address, within 15 minutes, `POST /auth/login` answers 429 with `Retry-After` without checking the password. Wrong current passwords in `POST /auth/password` count too. The counters live in the backend's memory, so a restart clears them; they assume the single uvicorn worker the image runs.
+
+The client address is the one nginx forwards. Behind another reverse proxy, set `TRUSTED_PROXIES` to its address, otherwise every request counts as coming from the proxy and 20 failures block logins for everyone.
 
 ## Trash
 
@@ -170,11 +253,28 @@ Tests marked `exiftool` are skipped when ExifTool is not installed, so coverage 
 
 RAW handling is tested against real camera files (NEF, CR3, ARW, DNG) in `backend/tests/fixtures/raw/`, shrunk to under 2.1 MB each by dropping their sensor data. [Its README](backend/tests/fixtures/raw/README.md) lists the sources and explains how to regenerate the files or add a camera.
 
+Frontend unit tests use [Vitest](https://vitest.dev/) with jsdom and Testing Library, next to the code they test (`*.test.ts(x)`):
+
+```bash
+cd frontend
+npm test                 # once, with coverage; CI requires 100% (lines, branches, functions, statements)
+npm run test:watch       # rerun on changes
+```
+
+`src/main.tsx` is the only file excluded from coverage, since it just mounts the router; the routes themselves are tested in `src/routes.test.tsx`. Helpers live in `src/test/`:
+
+- `mockApi(routes)` replaces `fetch` with canned replies keyed by `"METHOD /path"` and returns the calls made. A request to an unknown route fails the test.
+- `deferred()` gives a reply that arrives when the test says so, to check loading states.
+- `makePhoto()` builds a `Photo` with sensible defaults.
+- `src/test/leaflet.tsx` stands in for `react-leaflet` (`vi.mock("react-leaflet", () => import("./test/leaflet"))`), because Leaflet needs layout, SVG and canvas APIs that jsdom lacks. Markers render as elements carrying their position, and `clickMap(lat, lon)` triggers a map click.
+
 ## Code style
 
 ```bash
 cd backend && uv run ruff check --fix . && uv run ruff format .
-cd frontend && npm run format
+cd frontend && npm run lint && npm run format
 ```
 
-CI runs lint, format checks, backend tests with the coverage gate, `alembic check` and the frontend build on every push and pull request.
+The frontend is linted with [oxlint](https://oxc.rs/docs/guide/usage/linter) (`.oxlintrc.json`) rather than ESLint: its type-aware rules run on `oxlint-tsgolint`, which is built on the TypeScript 7 compiler, while typescript-eslint does not support TypeScript 7. `npm run lint` fails on warnings too. Besides correctness rules it checks promises (`no-floating-promises`, `no-misused-promises`: use `void` for fire-and-forget calls and wrap async handlers as `onClick={() => void save()}`), hooks dependencies, and accessibility (clickable elements must be buttons or links).
+
+CI runs lint, format checks, backend and frontend tests with their coverage gates, `alembic check` and the frontend build on every push and pull request. Dependabot opens weekly update PRs (`.github/dependabot.yml`), holding each version bump until the release is 2 days old; security fixes are not delayed (they come from the repository's Dependabot security updates setting). A `deploy` job also runs shellcheck on the scripts, starts the production stack, checks that only the UI is published and that the backend runs unprivileged, then backs up, deletes everything, restores and compares the restored photo with the original.

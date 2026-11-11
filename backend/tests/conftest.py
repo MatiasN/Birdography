@@ -18,6 +18,7 @@ from PIL.TiffImagePlugin import IFDRational  # noqa: E402
 from sqlalchemy import create_engine, make_url, text  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
+from app import auth  # noqa: E402
 from app.auth import create_user  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.db import engine  # noqa: E402
@@ -58,6 +59,14 @@ def clean_tables():
     command.upgrade(Config("alembic.ini"), "head")
     with engine.begin() as conn:
         conn.execute(text(f"TRUNCATE {TABLES} RESTART IDENTITY CASCADE"))
+
+
+@pytest.fixture(autouse=True)
+def throttles():
+    """Login failure counters are process-wide; every test starts without any."""
+    yield
+    auth.failures_by_email.clear()
+    auth.failures_by_ip.clear()
 
 
 @pytest.fixture(autouse=True)

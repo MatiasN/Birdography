@@ -26,6 +26,7 @@ vite.config.*.timestamp-*
 # App data
 data/
 uploads/
+backups/
 
 # Logs
 logs/

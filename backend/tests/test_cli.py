@@ -24,19 +24,49 @@ def upload(client, data=None):
     return client.post("/photos", files={"file": ("bird.jpg", data or make_jpeg(), "image/jpeg")}).json()
 
 
+PASSWORD = "long enough password"
+
+
+def answer(monkeypatch, *answers):
+    replies = iter(answers)
+    monkeypatch.setattr(cli, "getpass", lambda prompt: next(replies))
+
+
 def test_create_user(monkeypatch, capsys, anon):
-    answers = iter(["pw", "pw"])
-    monkeypatch.setattr(cli, "getpass", lambda prompt: next(answers))
+    answer(monkeypatch, PASSWORD, PASSWORD)
     out = run(monkeypatch, capsys, "create-user", "New@Example.com")
     assert out.startswith("Created user ") and out.strip().endswith("new@example.com")
-    assert anon.post("/auth/login", json={"email": "new@example.com", "password": "pw"}).status_code == 200
+    assert anon.post("/auth/login", json={"email": "new@example.com", "password": PASSWORD}).status_code == 200
 
 
 def test_create_user_password_mismatch(monkeypatch, capsys):
-    answers = iter(["pw", "other"])
-    monkeypatch.setattr(cli, "getpass", lambda prompt: next(answers))
+    answer(monkeypatch, PASSWORD, "something else")
     with pytest.raises(SystemExit, match="Passwords do not match"):
         run(monkeypatch, capsys, "create-user", "x@example.com")
+
+
+@pytest.mark.parametrize(
+    ("password", "message"),
+    [("short", "at least 10 characters"), ("x" * 1025, "limited to 1024 characters")],
+)
+def test_create_user_rejects_bad_passwords(monkeypatch, capsys, password, message):
+    answer(monkeypatch, password)  # rejected before asking again
+    with pytest.raises(SystemExit, match=message):
+        run(monkeypatch, capsys, "create-user", "x@example.com")
+
+
+def test_set_password(monkeypatch, capsys, client, anon):
+    answer(monkeypatch, PASSWORD, PASSWORD)
+    out = run(monkeypatch, capsys, "set-password", "ME@example.com")
+    assert out.strip() == "Password changed for me@example.com; existing sessions are logged out"
+    assert client.get("/auth/me").status_code == 401
+    assert anon.post("/auth/login", json={"email": "me@example.com", "password": "secret"}).status_code == 401
+    assert anon.post("/auth/login", json={"email": "me@example.com", "password": PASSWORD}).status_code == 200
+
+
+def test_set_password_unknown_user(monkeypatch, capsys):
+    with pytest.raises(SystemExit, match="No user with email nobody@example.com"):
+        run(monkeypatch, capsys, "set-password", "nobody@example.com")
 
 
 def test_restore_user(monkeypatch, capsys, client):
@@ -160,3 +190,89 @@ def test_backfill_derivatives(monkeypatch, capsys, client):
 def test_restorable_kinds_match_the_parser():
     assert set(cli.trash.RESTORABLE) == {"photo", "location", "species", "user"}
     assert Species in cli.trash.RESTORABLE.values()
+
+
+def files_of(photo_id: int) -> dict[str, PhotoFile]:
+    with Session(engine) as db:
+        return {f.kind: f for f in db.get(Photo, photo_id).files}
+
+
+def test_verify_files_all_good(monkeypatch, capsys, client):
+    photo = upload(client)
+    storage.path(".tmp/leftover").parent.mkdir(exist_ok=True)
+    storage.path(".tmp/leftover").write_bytes(b"x")  # dot directories are not catalog files
+    storage.path(".pre-restore-1/old.jpg").parent.mkdir()
+    storage.path(".pre-restore-1/old.jpg").write_bytes(b"x")
+    out = run(monkeypatch, capsys, "verify-files", "--checksums")
+    assert out.strip() == f"{len(files_of(photo['id']))} files checked: 0 missing, 0 damaged, 0 unreferenced"
+
+
+def test_verify_files_reports_problems(monkeypatch, capsys, client):
+    photo, other, pending = upload(client), upload(client), upload(client)
+    gone = files_of(photo["id"])["original"]
+    storage.remove(gone.path)
+    resized = files_of(other["id"])["original"]
+    storage.path(resized.path).write_bytes(b"truncated")
+    with Session(engine) as db:  # a row from migration 0006 that backfill-files has not completed
+        db.get(PhotoFile, files_of(pending["id"])["original"].id).sha256 = f"pending:{pending['id']}"
+        db.commit()
+    storage.path(files_of(pending["id"])["original"].path).write_bytes(b"not compared")
+    storage.path("stray.jpg").write_bytes(b"x")
+
+    with pytest.raises(SystemExit) as exit:
+        run(monkeypatch, capsys, "verify-files")
+    assert exit.value.code == 1
+    out = capsys.readouterr().out.splitlines()
+    assert f"missing: {gone.path} (photo {photo['id']}, original)" in out
+    assert f"damaged: {resized.path} (photo {other['id']}, original)" in out
+    assert "unreferenced: stray.jpg" in out
+    assert out[-1].endswith(": 1 missing, 1 damaged, 1 unreferenced")
+
+
+def test_verify_files_checksums_catch_same_size_damage(monkeypatch, capsys, client):
+    photo = upload(client)
+    original = files_of(photo["id"])["original"]
+    data = storage.path(original.path).read_bytes()
+    storage.path(original.path).write_bytes(bytes([data[0] ^ 1]) + data[1:])
+    assert run(monkeypatch, capsys, "verify-files").strip().endswith("0 missing, 0 damaged, 0 unreferenced")
+    with pytest.raises(SystemExit):
+        run(monkeypatch, capsys, "verify-files", "--checksums")
+    assert f"damaged: {original.path}" in capsys.readouterr().out
+
+
+class FakeOs:
+    """Records the privilege calls drop_root makes, without needing root."""
+
+    def __init__(self, monkeypatch, euid):
+        self.calls = []
+        monkeypatch.setattr(cli.os, "geteuid", lambda: euid)
+        for name in ("setgroups", "setgid", "setuid"):
+            monkeypatch.setattr(cli.os, name, lambda value, name=name: self.calls.append((name, value)))
+
+
+def test_drop_root_switches_to_the_backend_user(monkeypatch):
+    fake = FakeOs(monkeypatch, euid=0)
+    monkeypatch.setenv("PUID", "1234")
+    monkeypatch.setenv("PGID", "5678")
+    cli.drop_root()
+    assert fake.calls == [("setgroups", []), ("setgid", 5678), ("setuid", 1234)]
+
+
+def test_drop_root_group_defaults_to_the_user(monkeypatch):
+    fake = FakeOs(monkeypatch, euid=0)
+    monkeypatch.setenv("PUID", "1234")
+    monkeypatch.delenv("PGID", raising=False)
+    cli.drop_root()
+    assert fake.calls[1:] == [("setgid", 1234), ("setuid", 1234)]
+
+
+@pytest.mark.parametrize(("euid", "puid"), [(1000, "1234"), (0, None)])
+def test_drop_root_leaves_others_alone(monkeypatch, euid, puid):
+    """Not root, or root outside the image (no PUID): nothing to do."""
+    fake = FakeOs(monkeypatch, euid=euid)
+    if puid:
+        monkeypatch.setenv("PUID", puid)
+    else:
+        monkeypatch.delenv("PUID", raising=False)
+    cli.drop_root()
+    assert fake.calls == []
