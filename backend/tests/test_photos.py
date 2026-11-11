@@ -107,6 +107,33 @@ def test_list_filters_by_camera(client):
     assert [p["camera"] for p in photos] == ["Nikon Z9"]
 
 
+@pytest.mark.exiftool
+def test_list_filters_by_date(client):
+    early = upload(client, make_jpeg(taken_at="2026:01:10 08:00:00")).json()
+    late = upload(client, make_jpeg(taken_at="2026:06:10 08:00:00")).json()
+
+    assert client.get("/photos", params={"taken_from": "2026-03-01T00:00:00Z"}).json() == [late]
+    assert client.get("/photos", params={"taken_to": "2026-03-01T00:00:00Z"}).json() == [early]
+    params = {"taken_from": "2026-01-01T00:00:00Z", "taken_to": "2026-12-31T00:00:00Z"}
+    assert [p["id"] for p in client.get("/photos", params=params).json()] == [late["id"], early["id"]]
+
+
+def test_assign_and_clear_location(client):
+    location = client.post("/locations", json={"name": "Home", "lat": 38.7, "lon": -9.1}).json()
+    photo = upload(client).json()
+
+    assert (
+        client.patch(f"/photos/{photo['id']}", json={"location_id": location["id"]}).json()["location_id"]
+        == (location["id"])
+    )
+    assert client.patch(f"/photos/{photo['id']}", json={"location_id": None}).json()["location_id"] is None
+    assert client.patch(f"/photos/{photo['id']}", json={"location_id": 999}).status_code == 400
+
+    other = login("other@example.com")
+    theirs = other.post("/locations", json={"name": "Away", "lat": 0, "lon": 0}).json()
+    assert client.patch(f"/photos/{photo['id']}", json={"location_id": theirs["id"]}).status_code == 400
+
+
 def test_file_missing_on_disk(client):
     photo = upload(client).json()
     for name in stored():

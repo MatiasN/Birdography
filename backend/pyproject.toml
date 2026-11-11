@@ -23,6 +23,7 @@ dependencies = [
 dev = [
     "httpx>=0.28",
     "pytest>=8",
+    "pytest-cov>=7.1.0",
     "ruff>=0.8",
 ]
 
@@ -40,3 +41,12 @@ select = ["E", "F", "I", "UP", "B"]
 testpaths = ["tests"]
 pythonpath = ["."]
 markers = ["exiftool: needs the ExifTool binary; skipped when it is not installed"]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 100
+show_missing = true
+skip_covered = true

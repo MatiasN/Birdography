@@ -147,9 +147,10 @@ Backend tests and `alembic check` read the database credentials from `.env` (see
 docker compose up -d db
 cd backend
 uv run pytest
+uv run pytest --cov      # with coverage; CI requires 100% (lines and branches)
 ```
 
-Tests marked `exiftool` are skipped when ExifTool is not installed. CI installs it and runs everything.
+Tests marked `exiftool` are skipped when ExifTool is not installed, so coverage falls short locally without it. CI installs it and runs everything.
 
 RAW handling is tested against real camera files (NEF, CR3, ARW, DNG) in `backend/tests/fixtures/raw/`, shrunk to under 2.1 MB each by dropping their sensor data. [Its README](backend/tests/fixtures/raw/README.md) lists the sources and explains how to regenerate the files or add a camera.
 
@@ -160,4 +161,4 @@ cd backend && uv run ruff check --fix . && uv run ruff format .
 cd frontend && npm run format
 ```
 
-CI runs lint, format checks, backend tests, `alembic check` and the frontend build on every push and pull request.
+CI runs lint, format checks, backend tests with the coverage gate, `alembic check` and the frontend build on every push and pull request.
