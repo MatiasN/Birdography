@@ -1,12 +1,14 @@
 """Real camera RAW files (shrunk, see tests/fixtures/raw/README.md) through detection, preview and upload."""
 
 import shutil
+from datetime import datetime
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import exiftool, filetypes, storage
+from app import exif, exiftool, filetypes, storage
 from app.cli import backfill_derivatives
 from app.config import settings
 from app.db import engine
@@ -16,7 +18,10 @@ from tests.test_upload import kinds, upload
 
 pytestmark = pytest.mark.exiftool
 
+
 SAMPLES = list(RAW_SAMPLES.values())
+
+
 # The client's name never decides the type: no extension, or the extension of another format.
 CLIENT_NAMES = {"nef": "IMG_0001.CR3", "cr3": "DSC_0001.NEF", "arw": "DSC00001", "dng": "photo.jpg"}
 
@@ -30,6 +35,29 @@ def test_detected_by_content_without_extension(tmp_path, sample):
     upload_temp = tmp_path / "upload"
     shutil.copyfile(sample.path, upload_temp)
     assert filetypes.detect(upload_temp) == filetypes.TYPES[sample.format]
+
+
+# camera, lens, ISO, shutter, aperture, focal length, offset minutes; None where the file says 0 or '----'.
+EXPECTED_FIELDS = {
+    "nef": ("NIKON CORPORATION NIKON Z5_2", "NIKKOR Z 24-70mm f/4 S", 100, "0.002500", "7.1", "24.0", 120),
+    "cr3": ("Canon EOS R6 Mark III", "RF50mm F1.4 L VCM", 100, "0.050000", "7.1", "50.0", -480),
+    "arw": ("SONY ILCE-7S", None, 400, "0.004000", None, None, None),
+    "dng": ("Canon EOS 5D Mark III", "EF70-200mm f/2.8L IS II USM", 200, "0.008000", "2.8", "70.0", None),
+}
+
+
+@pytest.mark.parametrize("sample", SAMPLES, ids=by_format)
+def test_metadata_fields(sample):
+    camera, lens, iso, shutter, aperture, focal, offset = EXPECTED_FIELDS[sample.format]
+    meta = exif.read(sample.path)
+    assert (meta["camera"], meta["lens"], meta["iso"]) == (camera, lens, iso)
+    assert meta["shutter_seconds"] == Decimal(shutter)
+    assert meta["aperture"] == (Decimal(aperture) if aperture else None)
+    assert meta["focal_length_mm"] == (Decimal(focal) if focal else None)
+    assert meta["taken_at_local"] == datetime.strptime(sample.taken_at, "%Y:%m:%d %H:%M:%S")
+    assert meta["taken_offset_minutes"] == offset
+    assert (meta["lat"], meta["lon"]) == (None, None)
+    assert not any(k.startswith(("System:", "ExifTool:")) for k in meta["exif"])
 
 
 def test_nikon_z_nef_is_not_mistaken_for_coolpix_nrw(tmp_path):
@@ -74,6 +102,9 @@ def test_upload_produces_preview_and_thumbnail(client, sample):
         True,
         sample.path.stat().st_size,
     )
+    photo = response.json()
+    assert photo["camera"] == EXPECTED_FIELDS[sample.format][0]
+    assert photo["taken_at_local"] == datetime.strptime(sample.taken_at, "%Y:%m:%d %H:%M:%S").isoformat()
     assert client.get(original["url"]).headers["content-type"] == sample.mime_type
     assert any(name.endswith(filetypes.TYPES[sample.format].ext) for name in stored())
 

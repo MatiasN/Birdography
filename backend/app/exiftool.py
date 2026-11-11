@@ -1,8 +1,8 @@
 """Thin wrapper around the ExifTool command line.
 
-Used for what Pillow cannot do: tell TIFF-based RAW formats apart and pull the embedded JPEG out of a RAW
-file. `metadata` reads every tag of every supported format, for when EXIF extraction moves off exifread. One
-process per call; a persistent `-stay_open` process is a later optimisation if uploads ever queue up.
+Used for what Pillow cannot do: tell TIFF-based RAW formats apart, pull the embedded JPEG out of a RAW file,
+and read metadata from every supported format (`app.exif` builds on `metadata`). One process per call; a
+persistent `-stay_open` process is a later optimisation if uploads ever queue up.
 """
 
 import base64

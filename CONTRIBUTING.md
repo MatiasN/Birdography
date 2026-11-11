@@ -5,7 +5,7 @@
 - Docker with Docker Compose
 - [uv](https://docs.astral.sh/uv/) (Python 3.14 is installed by uv if missing)
 - Node.js 24
-- [ExifTool](https://exiftool.org/) when running the backend or its tests outside Docker. CI and the Docker image install the version pinned in `backend/scripts/install_exiftool.py` (currently 13.63); to get the same one locally, run `sudo python3 backend/scripts/install_exiftool.py`, or use `--prefix ~/.local` for a user install. Distribution packages (`apt install libimage-exiftool-perl`, `brew install exiftool`) work too but may be older. To upgrade the pin, change `VERSION` and `SHA256` in that script, using the values from https://exiftool.org/checksums.txt. It tells the TIFF-based RAW formats apart and extracts RAW previews; without it those uploads are stored as TIFF without a preview. Tests that need it are skipped when it is missing; `GET /health` reports the version in use.
+- [ExifTool](https://exiftool.org/) when running the backend or its tests outside Docker. CI and the Docker image install the version pinned in `backend/scripts/install_exiftool.py` (currently 13.63); to get the same one locally, run `sudo python3 backend/scripts/install_exiftool.py`, or use `--prefix ~/.local` for a user install. Distribution packages (`apt install libimage-exiftool-perl`, `brew install exiftool`) work too but may be older. To upgrade the pin, change `VERSION` and `SHA256` in that script, using the values from https://exiftool.org/checksums.txt. It reads all photo metadata and extracts RAW previews; without it uploads still succeed but get neither (`reread-metadata` repairs them later). Tests that need it are skipped when it is missing; `GET /health` reports the version in use.
 
 ## Project layout
 

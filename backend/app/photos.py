@@ -1,21 +1,22 @@
+import logging
 from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
-from geoalchemy2 import WKTElement
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app import derivatives, exif, filetypes, storage
+from app import derivatives, exif, exiftool, filetypes, storage
 from app.auth import CurrentUser
 from app.config import settings
 from app.db import DB
 from app.models import FILE_KINDS, Location, Photo, PhotoFile, PhotoSpecies, Species, User
 from app.storage import MB
 
+log = logging.getLogger(__name__)
 router = APIRouter(prefix="/photos", tags=["photos"])
 
 
@@ -87,18 +88,17 @@ def upload(file: UploadFile, background: BackgroundTasks, db: DB, user: CurrentU
     name = storage.finalize(temp.name, ftype.ext)
     written = [name]
     try:
-        meta = exif.read(storage.path(name))
-        point = None
-        if meta["lat"] is not None and meta["lon"] is not None:
-            point = WKTElement(f"POINT({meta['lon']} {meta['lat']})", srid=4326)
+        try:
+            meta = exif.read(storage.path(name))
+        except exiftool.ExifToolError as err:
+            # The photo is still worth keeping; `python -m app.cli reread-metadata` fills the gap later.
+            log.warning("%s: metadata not read (%s)", name, err)
+            meta = exif.empty()
         # Pillow cannot open RAW; those get their dimensions once metadata is read with ExifTool.
         width, height = (None, None) if ftype.is_raw else derivatives.dimensions(storage.path(name))
 
         photo = Photo(
             owner_id=user.id,
-            **{field: meta[field] for field in (*exif.TAKEN_FIELDS, *exif.CAMERA_FIELDS)},
-            exif=meta["exif"],
-            point=point,
             files=[
                 PhotoFile(
                     kind="original",
@@ -114,6 +114,7 @@ def upload(file: UploadFile, background: BackgroundTasks, db: DB, user: CurrentU
                 )
             ],
         )
+        exif.apply(photo, meta)
         db.add(photo)
         inline = temp.size <= settings.background_derivatives_mb * MB
         if inline:
@@ -217,11 +218,8 @@ def get_file(
 
 
 def _set_taken_at(photo: Photo, value: datetime | None) -> None:
-    if value is None:  # back to what the camera recorded
-        meta = exif.parse(photo.exif or {})
-        for field in exif.TAKEN_FIELDS:
-            setattr(photo, field, meta[field])
-        photo.taken_at_manual = False
+    if value is None:
+        exif.set_taken(photo, exif.parse(photo.exif or {}))
         return
     if value.tzinfo is not None:
         photo.taken_offset_minutes = int(value.utcoffset().total_seconds() // 60)

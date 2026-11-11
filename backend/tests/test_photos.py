@@ -1,6 +1,7 @@
 import pytest
 
 from app import storage
+from app.config import settings
 from tests.conftest import login, make_jpeg, stored
 
 
@@ -8,6 +9,7 @@ def upload(client, data=None, name="bird.jpg"):
     return client.post("/photos", files={"file": (name, data or make_jpeg(), "image/jpeg")})
 
 
+@pytest.mark.exiftool
 def test_upload_reads_exif(client):
     data = make_jpeg(
         camera="Canon EOS R5",
@@ -30,6 +32,15 @@ def test_upload_reads_exif(client):
     assert photo["shutter_seconds"] == pytest.approx(0.002)
     assert photo["aperture"] == pytest.approx(5.6)
     assert photo["focal_length_mm"] == pytest.approx(600)
+
+
+def test_upload_without_exiftool_keeps_the_photo(client, monkeypatch, tmp_path, caplog):
+    """Metadata is lost, not the upload; `reread-metadata` fills it in once ExifTool is installed."""
+    monkeypatch.setattr(settings, "exiftool_path", str(tmp_path / "missing-exiftool"))
+    response = upload(client, make_jpeg(camera="Canon EOS R5", taken_at="2026:05:14 07:32:10"))
+    assert response.status_code == 201
+    assert response.json()["camera"] is None and response.json()["taken_at"] is None
+    assert "metadata not read" in caplog.text
 
 
 def test_upload_without_exif(client):
@@ -94,6 +105,7 @@ def test_file_missing_on_disk(client):
     assert client.get(f"/photos/{photo['id']}/file", params={"kind": "original"}).status_code == 404
 
 
+@pytest.mark.exiftool
 def test_list_filters_by_camera(client):
     upload(client, make_jpeg(camera="Canon EOS R5"))
     upload(client, make_jpeg(camera="Nikon Z9"))
@@ -122,6 +134,7 @@ def test_assign_unknown_species(client):
     assert client.patch(f"/photos/{photo['id']}", json={"species_ids": [999]}).status_code == 400
 
 
+@pytest.mark.exiftool
 def test_user_overrides_taken_date(client):
     photo = upload(client, make_jpeg(taken_at="2020:01:01 00:00:00")).json()
 
