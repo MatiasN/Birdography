@@ -1,11 +1,14 @@
 services:
   db:
-    image: postgis/postgis:17-3.5
+    image: postgis/postgis:18-3.7
     restart: unless-stopped
-    env_file: .env
+    env_file: ${ENV_FILE:-.env}
     # Not published: only the backend talks to it. compose.override.yml publishes it on localhost for development.
     volumes:
-      - db-data:/var/lib/postgresql/data
+      # PostgreSQL 18+ images keep the data in a versioned subdirectory (18/docker) of this mount. A volume from
+      # the 17 image (data at the mount root) makes the container stop with a message naming pg_upgrade; see
+      # CONTRIBUTING.md → Upgrading PostgreSQL for the backup-and-restore steps.
+      - db-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
@@ -14,7 +17,7 @@ services:
   backend:
     build: ./backend
     restart: unless-stopped
-    env_file: .env
+    env_file: ${ENV_FILE:-.env}
     environment:
       # The entrypoint hands the photo directory to this user and group, then runs the backend as them.
       PUID: ${PUID:-1000}

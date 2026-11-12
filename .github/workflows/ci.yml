@@ -13,7 +13,7 @@ jobs:
         working-directory: backend
     services:
       db:
-        image: postgis/postgis:17-3.5
+        image: postgis/postgis:18-3.7
         env:
           POSTGRES_USER: birdography
           POSTGRES_PASSWORD: birdography
@@ -33,10 +33,10 @@ jobs:
       POSTGRES_HOST: localhost
       SECRET_KEY: ci-only-secret-key-at-least-32-characters
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
-          python-version: "3.14"
+          python-version: "3.15"
       # Pinned release, the same as in the Docker image; the Ubuntu package lags behind.
       - run: sudo python3 -I scripts/install_exiftool.py
       - run: exiftool -ver
@@ -53,10 +53,10 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-node@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
@@ -73,7 +73,7 @@ jobs:
       COMPOSE: docker compose -f docker-compose.yml
       BIND_ADDRESS: 127.0.0.1
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Shell scripts
         run: shellcheck scripts/*.sh backend/fix-permissions.sh frontend/real-ip.sh
       - name: Configure
@@ -114,6 +114,27 @@ jobs:
             -d '{"email": "ci@example.com", "password": "ci-password-123"}' localhost:3000/api/auth/login
           curl -fsS -b jar 'localhost:3000/api/photos/1/file?kind=original' -o restored.arw
           cmp restored.arw backend/tests/fixtures/raw/sony_ilce_7s.arw
+      # A backup from the PostGIS 17 image (used until November 2026) restores on the current one: its dump names
+      # extensions the 18 image no longer has, which restore.sh skips. See scripts/fixtures/backup-pg17/README.md.
+      - name: Restore a PostgreSQL 17 backup
+        run: |
+          scripts/restore.sh --force scripts/fixtures/backup-pg17 2>&1 | tee restore17.log
+          grep -q 'Skipping extension postgis_tiger_geocoder' restore17.log
+          test "$($COMPOSE exec -T db psql -X -tA -U birdography -d birdography -c 'SELECT count(*) FROM users')" = 1
+          curl -fsS -c jar17 -H 'Content-Type: application/json' \
+            -d '{"email": "fixture@example.com", "password": "fixture-password-123"}' localhost:3000/api/auth/login
+      # scripts/dev.sh from a clean checkout: generated settings, seeded photos on the map, on its own ports.
+      - name: Dev stack
+        run: |
+          scripts/dev.sh up --photos 20
+          curl -fsS -c devjar -H 'Content-Type: application/json' \
+            -d '{"email": "dev@birdography.local", "password": "birdography-dev"}' localhost:3001/api/auth/login
+          points=$(curl -fsS -b devjar localhost:3001/api/photos/points | python3 -c 'import json, sys; print(len(json.load(sys.stdin)))')
+          echo "$points photos on the map"
+          test "$points" -ge 15  # 20 minus the few without GPS
+          scripts/dev.sh down --volumes
       - name: Logs
         if: failure()
-        run: $COMPOSE logs
+        run: |
+          $COMPOSE logs
+          docker compose -p birdography-dev logs
