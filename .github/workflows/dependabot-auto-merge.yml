@@ -1,0 +1,64 @@
+# Merges Dependabot's minor and patch updates on their own once CI is green, so only majors need a person.
+#
+# What it does: for a Dependabot PR whose update type is minor or patch and whose compatibility score (the share
+# of other repositories where the same update kept CI green, as Dependabot reports it) is at least
+# DEPENDABOT_AUTO_MERGE_MIN_SCORE (a repository variable, 90 by default), it approves the PR and turns on GitHub's
+# auto-merge. GitHub then squash-merges when every rule of the `main` ruleset is met: the required checks green on
+# the current head, the branch up to date, the review present. Nothing merges here; the ruleset decides when.
+#
+# What it needs, in the repository settings (see CONTRIBUTING.md → Dependabot):
+#   - General → "Allow auto-merge"
+#   - Actions → General → "Allow GitHub Actions to create and approve pull requests"
+#   - the `main` ruleset: `deploy` among the required checks (it is where image bumps are tested), and the review
+#     requirement one this bot's approval can satisfy (not "Require review from Code Owners", since the bot owns
+#     no code)
+name: Dependabot auto-merge
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Decide
+        id: decide
+        env:
+          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
+          SCORE: ${{ steps.meta.outputs.compatibility-score }}
+          MIN_SCORE: ${{ vars.DEPENDABOT_AUTO_MERGE_MIN_SCORE || 90 }}
+          GROUP: ${{ steps.meta.outputs.dependency-group }}
+          DEPS: ${{ steps.meta.outputs.dependency-names }}
+        run: |
+          case "$UPDATE_TYPE" in
+            version-update:semver-minor | version-update:semver-patch) type_ok=1 ;;
+            *) type_ok=0 ;;
+          esac
+          # fetch-metadata reports the highest score among the updated dependencies; 0 or empty means Dependabot
+          # has no data for them, which is not "high compatibility".
+          case "$SCORE" in '' | *[!0-9]*) score=0 ;; *) score=$SCORE ;; esac
+          if [ "$type_ok" = 1 ] && [ "$score" -ge "$MIN_SCORE" ]; then
+            echo "merge=true" >>"$GITHUB_OUTPUT"
+            echo "Auto-merge: ${GROUP:-$DEPS}, $UPDATE_TYPE, compatibility score $score (minimum $MIN_SCORE)" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "merge=false" >>"$GITHUB_OUTPUT"
+            echo "Left for review: ${GROUP:-$DEPS}, ${UPDATE_TYPE:-unknown update type}, compatibility score ${SCORE:-unknown} (minimum $MIN_SCORE)" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Approve and enable auto-merge
+        if: steps.decide.outputs.merge == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr review --approve --body "Minor or patch update with a high compatibility score; merges when CI is green (dependabot-auto-merge.yml)." "$PR"
+          gh pr merge --auto --squash "$PR"
