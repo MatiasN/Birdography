@@ -1,0 +1,7 @@
+# Loaded by scripts/dev.sh only, on top of compose.override.yml: the dev seeder and the switch it requires.
+services:
+  backend:
+    environment:
+      BIRDOGRAPHY_DEV: "1"
+    volumes:
+      - ./backend/devtools:/app/devtools

@@ -20,8 +20,8 @@ export type GroupItem = {
   lat: number;
   lon: number;
   count: number;
-  /** The zoom at which this marker splits, or null when it never does on this map (photos at the same spot). */
-  splitZoom: number | null;
+  /** The zoom it was drawn at; `PhotoClusters.splitZoom` looks deeper from there. */
+  zoom: number;
   /** What the marker is made of: supercluster groups and single photos. */
   clusters: number[];
   photos: Leaf[];
@@ -31,8 +31,12 @@ export type MapItem = PhotoItem | GroupItem;
 /** [west, south, east, north] in degrees, as Leaflet's bounds give them (longitudes may run past ±180). */
 export type Bounds = [number, number, number, number];
 
-/** One supercluster result, placed on screen. */
-type Raw = { lat: number; lon: number; x: number; y: number; count: number; cluster?: number; leaf?: Leaf };
+/** One supercluster result, placed on screen: a group (`cluster`) or a single photo (`leaf`). */
+type Raw = { lat: number; lon: number; x: number; y: number; count: number } & (
+  { cluster: number; leaf?: undefined } | { cluster?: undefined; leaf: Leaf }
+);
+/** One marker as drawn: the result it sits on and every result joined into it (that one included). */
+type Drawn = { anchor: Raw; parts: Raw[] };
 
 /** Pixel position at `zoom` in Web Mercator, as Leaflet draws it (256 px tiles). */
 function project(lat: number, lon: number, zoom: number): [number, number] {
@@ -56,6 +60,8 @@ export class PhotoClusters {
   readonly size: number;
   /** The box around every photo, to frame them all; null without photos. */
   readonly box: [[number, number], [number, number]] | null;
+  /** The photos as given; a leaf's `rank` is its place here. */
+  private readonly points: Point[];
 
   constructor(points: Point[], { joinPx = JOIN_PX }: { joinPx?: number } = {}) {
     // supercluster measures `radius` against `extent`, its tile size. Leaflet's tiles are 256 px, so with
@@ -68,6 +74,7 @@ export class PhotoClusters {
         geometry: { type: "Point", coordinates: [p.lon, p.lat] },
       })),
     );
+    this.points = points;
     this.size = points.length;
     this.box = extent(points);
   }
@@ -75,6 +82,11 @@ export class PhotoClusters {
   /** What to draw for the visible area at this zoom. */
   at(bounds: Bounds, zoom: number): MapItem[] {
     const z = Math.max(0, Math.min(MAX_ZOOM, Math.round(zoom)));
+    return this.layout(bounds, z).map(({ anchor, parts }) => this.toItem(anchor, parts, z));
+  }
+
+  /** The markers for the area at a whole zoom: supercluster's groups, then the overlap pass. */
+  private layout(bounds: Bounds, z: number): Drawn[] {
     const raw: Raw[] = this.index.getClusters(normalize(bounds), z).map((feature) => {
       const [lon, lat] = feature.geometry.coordinates;
       const [x, y] = project(lat, lon, z);
@@ -85,14 +97,13 @@ export class PhotoClusters {
     });
 
     // Biggest first: a large group keeps its place and takes in small neighbours that would overlap it.
-    const drawn: { anchor: Raw; parts: Raw[] }[] = [];
+    const drawn: Drawn[] = [];
     for (const item of raw.toSorted((a, b) => b.count - a.count)) {
       const host = drawn.find(({ anchor }) => (anchor.x - item.x) ** 2 + (anchor.y - item.y) ** 2 < MARKER_PX ** 2);
       if (host) host.parts.push(item);
       else drawn.push({ anchor: item, parts: [item] });
     }
-
-    return drawn.map(({ anchor, parts }) => this.toItem(anchor, parts, z));
+    return drawn;
   }
 
   private toItem(anchor: Raw, parts: Raw[], zoom: number): MapItem {
@@ -102,24 +113,66 @@ export class PhotoClusters {
     }
     const clusters = parts.flatMap((part) => (part.cluster === undefined ? [] : [part.cluster]));
     const photos = parts.flatMap((part) => (part.leaf ? [part.leaf] : []));
-    // One supercluster group splits where supercluster says. Markers joined by the final pass overlapped by less
-    // than a marker, so one level deeper (twice the distance) they are apart.
-    const split = parts.length === 1 ? this.index.getClusterExpansionZoom(clusters[0]) : zoom + 1;
     return {
       kind: "group",
       key: `g${clusters.join(",")}|${photos.map((leaf) => leaf.photo).join(",")}`,
       lat,
       lon,
       count: parts.reduce((sum, part) => sum + part.count, 0),
-      splitZoom: split <= MAX_ZOOM ? split : null,
+      zoom,
       clusters,
       photos,
     };
   }
 
+  /**
+   * The zoom at which a group marker splits, for "Zoom in": the first level deeper at which its photos are drawn as
+   * more than one marker, or null if that never happens on this map (photos at the same spot).
+   *
+   * supercluster names a level, and markers joined by the overlap pass split one level deeper (twice the distance),
+   * but both are only a first guess: supercluster splits a group into groups placed at their photos' average, which
+   * can be closer than a marker, and the overlap pass would join them back. So each level is laid out to check.
+   * Asked when a group is opened, not for every marker on every redraw: with thousands of photos the check costs
+   * tens of milliseconds.
+   */
+  splitZoom(group: GroupItem): number | null {
+    const single = group.clusters.length === 1 && group.photos.length === 0;
+    const guess = single ? this.index.getClusterExpansionZoom(group.clusters[0]) : group.zoom + 1;
+    if (guess > MAX_ZOOM) return null; // photos at the same spot: nothing to check
+    const mine = new Set(this.photosIn(group));
+    const spots = [...group.photos, ...group.clusters.flatMap((id) => this.leaves(id))].map(
+      (leaf) => this.points[leaf.rank],
+    );
+    let [west, south, east, north] = [180, 90, -180, -90];
+    for (const { lat, lon } of spots) {
+      [west, south, east, north] = [
+        Math.min(west, lon),
+        Math.min(south, lat),
+        Math.max(east, lon),
+        Math.max(north, lat),
+      ];
+    }
+    // supercluster's levels nest: a result one level deeper lies wholly inside one result of the level above, so a
+    // single photo of it tells whether it is part of this group.
+    const isMine = (part: Raw) =>
+      mine.has(part.leaf ? part.leaf.photo : this.index.getLeaves(part.cluster, 1)[0].properties.photo);
+    for (let z = guess; z <= MAX_ZOOM; z++) {
+      // Everything that can reach the group's markers at this zoom: its photos, and three markers around them.
+      const pad = (3 * MARKER_PX * 360) / (256 * 2 ** z);
+      const around: Bounds = [west - pad, south - pad, east + pad, north + pad];
+      const holding = this.layout(normalize(around), z).filter(({ parts }) => parts.some(isMine));
+      if (holding.length > 1) return z;
+    }
+    return null;
+  }
+
+  private leaves(cluster: number): Leaf[] {
+    return this.index.getLeaves(cluster, Infinity).map((leaf) => leaf.properties);
+  }
+
   /** Every photo behind a group marker, newest first. */
   photosIn(group: GroupItem): number[] {
-    const leaves = group.clusters.flatMap((id) => this.index.getLeaves(id, Infinity).map((leaf) => leaf.properties));
+    const leaves = group.clusters.flatMap((id) => this.leaves(id));
     return [...group.photos, ...leaves].toSorted((a, b) => a.rank - b.rank).map((leaf) => leaf.photo);
   }
 }
