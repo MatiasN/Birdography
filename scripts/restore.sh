@@ -48,7 +48,9 @@ field() { sed -n "s/^ *\"$1\": \"\{0,1\}\([^\",]*\)\"\{0,1\},\{0,1\}$/\1/p" "$sr
 sql() { $compose exec -T db sh -c 'psql -X -q -tA -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "${2:-$POSTGRES_DB}" -c "$1"' sh "$@"; }
 
 # 1. The backup is complete and intact.
-[ -f "$src/manifest.json" ] && [ -f "$src/db.dump" ] || die "$src has no manifest.json or db.dump; not a backup?"
+if [ ! -f "$src/manifest.json" ] || [ ! -f "$src/db.dump" ]; then
+    die "$src has no manifest.json or db.dump; not a backup?"
+fi
 [ "$(field format)" = 1 ] || die "unknown backup format in $src/manifest.json"
 revision=$(field alembic_revision)
 [ "$(sha256 "$src/db.dump")" = "$(field db_sha256)" ] || die "db.dump does not match its checksum; the backup is damaged"
