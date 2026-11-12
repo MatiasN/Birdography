@@ -2,6 +2,12 @@
 # `cooldown` holds every version update back until the release is 2 days old, so a hijacked package that gets
 # yanked within hours never reaches a PR. Security updates (enabled in the repository settings under Dependabot)
 # are NOT delayed by cooldown: a fix for a known vulnerability arrives immediately.
+#
+# Grouped minor and patch PRs are merged by .github/workflows/dependabot-auto-merge.yml once CI is green and
+# Dependabot's compatibility score is high enough; majors wait for a person.
+#
+# Not tracked by Dependabot, so they must follow by hand: the PostGIS image of the CI `services` block and the
+# Node version in ci.yml and CONTRIBUTING (kept equal to the compose file and the frontend Dockerfile).
 version: 2
 updates:
   - package-ecosystem: uv
@@ -32,6 +38,16 @@ updates:
       interval: weekly
     cooldown:
       default-days: 2
+    groups:
+      docker-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # A new Node major is a coordinated change: Dockerfile, CI `node-version` and CONTRIBUTING together, and only
+      # to an LTS line (even numbers). Done by hand, see docs/plans/0006-dependency-upgrades-2026-11.md step 4.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+      # Python majors (3.14 → 3.15) are "minor" in semver terms and come through; the Dockerfile, CI and
+      # `requires-python` still move together by hand, see step 2 of the same plan.
 
   - package-ecosystem: docker-compose
     directory: /
@@ -39,6 +55,11 @@ updates:
       interval: weekly
     cooldown:
       default-days: 2
+    ignore:
+      # A PostgreSQL major needs a data migration (backup and restore) and the CI service image updated;
+      # see CONTRIBUTING.md → Upgrading PostgreSQL. Minor PostGIS bumps (18-3.7 → 18-3.8) still come through.
+      - dependency-name: postgis/postgis
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
@@ -46,3 +67,6 @@ updates:
       interval: weekly
     cooldown:
       default-days: 2
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]
