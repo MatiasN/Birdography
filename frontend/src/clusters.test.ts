@@ -102,7 +102,8 @@ describe("PhotoClusters", () => {
       { joinPx: MARKER_PX * 0.25 },
     );
     const group = groupOf(clusters.at(WORLD, zoom));
-    expect(group).toMatchObject({ count: 2, splitZoom: zoom + 1, clusters: [] });
+    expect(group).toMatchObject({ count: 2, zoom, clusters: [] });
+    expect(clusters.splitZoom(group)).toBe(zoom + 1);
     expect(clusters.photosIn(group)).toEqual([1, 2]);
     expect(clusters.at(WORLD, zoom + 1).map((item) => item.kind)).toEqual(["photo", "photo"]);
     // Fully zoomed in there is no deeper level to split them at.
@@ -113,7 +114,7 @@ describe("PhotoClusters", () => {
       ],
       { joinPx: MARKER_PX * 0.25 },
     );
-    expect(groupOf(deepest.at(WORLD, MAX_ZOOM)).splitZoom).toBeNull();
+    expect(deepest.splitZoom(groupOf(deepest.at(WORLD, MAX_ZOOM)))).toBeNull();
   });
 
   it("splits a group when zooming in far enough, and says at which zoom", () => {
@@ -123,12 +124,42 @@ describe("PhotoClusters", () => {
       { id: 2, lat: 0, lon: degreesFor(JOIN_PX * 0.9, zoom) }, // joined at 10, twice as far apart at 11
     ]);
     const group = groupOf(clusters.at(WORLD, zoom));
-    expect(group.splitZoom).toBe(zoom + 1);
+    expect(clusters.splitZoom(group)).toBe(zoom + 1);
     expect(group.clusters).toHaveLength(1);
     expect(clusters.at(WORLD, zoom + 1)).toEqual([
       { kind: "photo", key: "p1", id: 1, lat: 0, lon: 0 },
       { kind: "photo", key: "p2", id: 2, lat: 0, lon: expect.closeTo(degreesFor(JOIN_PX * 0.9, zoom)) },
     ]);
+  });
+
+  it("zooms in to where a group really splits, past the level supercluster names", () => {
+    // Found by searching random clouds: supercluster splits this group at 13 into two groups whose average positions
+    // are less than a marker apart, so the overlap pass draws them as one marker again there.
+    const points: Point[] = [
+      { id: 1, lat: 38.006386, lon: -9.000079 },
+      { id: 2, lat: 38.002179, lon: -8.993447 },
+      { id: 3, lat: 37.998032, lon: -8.998864 },
+      { id: 4, lat: 38.000138, lon: -8.995328 },
+    ];
+    const clusters = new PhotoClusters(points);
+    const group = groupOf(clusters.at(WORLD, 10));
+    expect(group).toMatchObject({ count: 4, clusters: [expect.any(Number)] });
+    const markersAt = (zoom: number) => clusters.at(WORLD, zoom).length;
+    expect(markersAt(13)).toBe(1); // where supercluster says it splits: still one marker
+    expect(clusters.splitZoom(group)).toBe(14);
+    expect(markersAt(14)).toBeGreaterThan(1); // one press is enough
+  });
+
+  it("never offers to zoom in when even the deepest level draws the group as one marker", () => {
+    // supercluster separates the two photos at the deepest zoom, but they are 0.3 markers apart there.
+    const clusters = new PhotoClusters(
+      [
+        { id: 1, lat: 0, lon: 0 },
+        { id: 2, lat: 0, lon: degreesFor(MARKER_PX * 0.3, MAX_ZOOM) },
+      ],
+      { joinPx: MARKER_PX * 0.25 },
+    );
+    expect(clusters.splitZoom(groupOf(clusters.at(WORLD, MAX_ZOOM - 1)))).toBeNull();
   });
 
   it("keeps photos taken at the same spot together even fully zoomed in", () => {
@@ -138,7 +169,8 @@ describe("PhotoClusters", () => {
       { id: 3, lat: 37, lon: -8 },
     ]);
     const group = groupOf(clusters.at(WORLD, MAX_ZOOM));
-    expect(group).toMatchObject({ count: 3, lat: expect.closeTo(37), lon: expect.closeTo(-8), splitZoom: null });
+    expect(group).toMatchObject({ count: 3, lat: expect.closeTo(37), lon: expect.closeTo(-8) });
+    expect(clusters.splitZoom(group)).toBeNull();
     // Zooms beyond the map's range (or fractional ones) are brought into it.
     expect(clusters.at(WORLD, MAX_ZOOM + 3)).toHaveLength(1);
     expect(clusters.at(WORLD, -2)).toHaveLength(1);

@@ -1,22 +1,22 @@
 [project]
 name = "birdography-backend"
 version = "0.1.0"
-requires-python = ">=3.14"
+requires-python = ">=3.15"
 dependencies = [
     "alembic>=1.14",
-    "fastapi>=0.115",
-    "geoalchemy2>=0.15",
+    "fastapi>=0.162.2",
+    "geoalchemy2>=0.21.0",
     "pillow>=13.0.0",
     "pillow-heif>=1.8.1",
-    "psycopg[binary]>=3.2",
+    "psycopg[binary]>=3.3.8",
     "pwdlib[argon2]>=0.3.1",
     "pydantic-settings>=2.6",
     "pyjwt>=2.15.1",
-    "python-multipart>=0.0.18",
-    "sqlalchemy>=2.0",
+    "python-multipart>=0.0.33",
+    "sqlalchemy>=2.1.8",
     "tzdata>=2026.6",
     "tzfpy>=2.1.2",
-    "uvicorn[standard]>=0.32",
+    "uvicorn[standard]>=0.54.0",
 ]
 
 [dependency-groups]
@@ -24,7 +24,7 @@ dev = [
     "httpx>=0.28",
     "pytest>=8",
     "pytest-cov>=7.1.0",
-    "ruff>=0.8",
+    "ruff>=0.17.4",
 ]
 
 [tool.uv]
@@ -32,7 +32,7 @@ package = false
 
 [tool.ruff]
 line-length = 120
-target-version = "py314"
+target-version = "py315"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
@@ -43,7 +43,7 @@ pythonpath = ["."]
 markers = ["exiftool: needs the ExifTool binary; skipped when it is not installed"]
 
 [tool.coverage.run]
-source = ["app"]
+source = ["app", "devtools"]
 branch = true
 
 [tool.coverage.report]
