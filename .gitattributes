@@ -6,3 +6,5 @@
 *.cr3 binary
 *.arw binary
 *.dng binary
+# Database dumps (CI fixture)
+*.dump binary

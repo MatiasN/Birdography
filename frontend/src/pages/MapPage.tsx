@@ -62,7 +62,7 @@ function Markers({ index, onPhoto, onGroup }: MarkersProps) {
   const open = (item: MapItem) => (item.kind === "photo" ? onPhoto(item.id) : openGroup(item));
 
   function openGroup(item: GroupItem) {
-    const split = item.splitZoom;
+    const split = index.splitZoom(item);
     onGroup({
       key: item.key,
       photoIds: index.photosIn(item),

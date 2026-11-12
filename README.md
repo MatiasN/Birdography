@@ -44,7 +44,9 @@ Photos are stored in `./data/photos` (`UPLOAD_DIR`) and the database in the `db-
 
 ## Development
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for running locally, migrations and tests.
+`scripts/dev.sh up` starts a local stack with a dev login and about 300 photos on the map, apart from any real
+install; see [Dev stack](CONTRIBUTING.md#dev-stack). [CONTRIBUTING.md](CONTRIBUTING.md) also covers running
+locally by hand, migrations and tests.
 
 ## Roadmap
 

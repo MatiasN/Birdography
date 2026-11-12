@@ -25,6 +25,8 @@ vite.config.*.timestamp-*
 
 # App data
 data/
+# scripts/dev.sh: its config, generated secrets and the dev photos, all in one place
+.dev/
 uploads/
 backups/
 

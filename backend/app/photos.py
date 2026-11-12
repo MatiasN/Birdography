@@ -1,7 +1,7 @@
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Annotated, Literal
+from typing import Annotated, BinaryIO, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
@@ -19,6 +19,7 @@ from app.storage import MB
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/photos", tags=["photos"])
+DUPLICATE = "This file has already been uploaded"
 
 
 class FileOut(BaseModel):
@@ -75,28 +76,52 @@ class PhotoUpdate(BaseModel):
         return self
 
 
+class Rejected(Exception):
+    """An upload refused before anything was stored; `status` is the HTTP status the API answers with."""
+
+    def __init__(self, status: int, detail: str):
+        super().__init__(detail)
+        self.status = status
+        self.detail = detail
+
+
 @router.post("", response_model=PhotoOut, status_code=201)
 def upload(file: UploadFile, background: BackgroundTasks, db: DB, user: CurrentUser):
     """Store one photo. The type comes from the content; the client's file name is only kept for display."""
     try:
-        temp = storage.save_temp(file.file, max_bytes=settings.max_raw_upload_mb * MB)
+        photo, inline = ingest(db, user, file.file, file.filename)
+    except Rejected as err:
+        raise HTTPException(err.status, err.detail) from None
+    if not inline:
+        background.add_task(derivatives.process, photo.id)
+    return photo
+
+
+def ingest(db: Session, user: User, stream: BinaryIO, filename: str | None) -> tuple[Photo, bool]:
+    """Store one photo for `user` and commit it; shared by the upload endpoint and the dev seeder.
+
+    Returns the photo and whether its preview and thumbnail were made already; if not, the caller runs
+    `derivatives.process` after responding. Raises `Rejected` for content that is not accepted.
+    """
+    try:
+        temp = storage.save_temp(stream, max_bytes=settings.max_raw_upload_mb * MB)
     except storage.TooLarge:
-        raise HTTPException(413, f"Files are limited to {settings.max_raw_upload_mb} MB") from None
+        raise Rejected(413, f"Files are limited to {settings.max_raw_upload_mb} MB") from None
     if temp.size == 0:
         storage.remove(temp.name)
-        raise HTTPException(400, "Empty file")
+        raise Rejected(400, "Empty file")
 
     ftype = filetypes.detect(storage.path(temp.name))
     if ftype is None:
         storage.remove(temp.name)
-        raise HTTPException(415, "Unsupported file type")
+        raise Rejected(415, "Unsupported file type")
     limit_mb = settings.max_raw_upload_mb if ftype.is_raw else settings.max_upload_mb
     if temp.size > limit_mb * MB:
         storage.remove(temp.name)
-        raise HTTPException(413, f"{ftype.format.upper()} files are limited to {limit_mb} MB")
+        raise Rejected(413, f"{ftype.format.upper()} files are limited to {limit_mb} MB")
     if db.scalar(select(PhotoFile.id).where(PhotoFile.sha256 == temp.sha256, PhotoFile.kind == "original")):
         storage.remove(temp.name)
-        raise HTTPException(409, "This file has already been uploaded")
+        raise Rejected(409, DUPLICATE)
 
     name = storage.finalize(temp.name, ftype.ext)
     written = [name]
@@ -118,7 +143,7 @@ def upload(file: UploadFile, background: BackgroundTasks, db: DB, user: CurrentU
                 PhotoFile(
                     kind="original",
                     path=name,
-                    original_filename=(file.filename or "")[:255] or None,
+                    original_filename=(filename or "")[:255] or None,
                     mime_type=ftype.mime_type,
                     format=ftype.format,
                     is_raw=ftype.is_raw,
@@ -138,15 +163,13 @@ def upload(file: UploadFile, background: BackgroundTasks, db: DB, user: CurrentU
     except IntegrityError:
         db.rollback()
         _remove_all(written)
-        raise HTTPException(409, "This file has already been uploaded") from None
+        raise Rejected(409, DUPLICATE) from None
     except BaseException:
         db.rollback()
         _remove_all(written)
         raise
     db.refresh(photo)
-    if not inline:
-        background.add_task(derivatives.process, photo.id)
-    return photo
+    return photo, inline
 
 
 @dataclass

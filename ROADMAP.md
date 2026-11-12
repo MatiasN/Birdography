@@ -19,8 +19,8 @@ Photo handling, species data and a first look at the map.
 - [x] Photo upload API: JPEG, PNG, TIFF, HEIC, WebP and RAW (NEF, CR2, CR3, ARW, DNG, RAF, ORF, RW2, PEF); 40 MB limit, 70 MB for RAW; detection by content; RAW preview and thumbnails extracted with ExifTool, see [plan 0002](docs/plans/0002-phase1-photo-upload-api.md)
 - [x] Real RAW test fixtures: CC0 samples from raw.pixls.us (NEF, CR3, ARW, DNG) under `backend/tests/fixtures/raw/`, shrunk to their metadata and embedded JPEGs; they cover content detection of extension-less files, embedded preview extraction and the RAW upload limit, see [plan 0003](docs/plans/0003-phase1-raw-fixtures-and-exif.md)
 - [x] EXIF extraction with ExifTool: GPS, local timestamp with offset, camera settings; offset derived from the GPS position (or a spot chosen on the map) when the camera records none; RAW dimensions from the crop tags rather than the sensor size, see [plan 0003](docs/plans/0003-phase1-raw-fixtures-and-exif.md)
-- [ ] RAW+JPEG pairs uploaded as one photo (the camera JPEG becomes the preview)
-- [ ] Photo catalog UI with filters by species, date and camera
+- [x] RAW+JPEG pairs uploaded as one photo (the camera JPEG becomes the preview)
+- [x] Photo catalog UI with filters by species, date and camera
 - [x] Map with photo markers: every located photo, no 200-photo limit; nearby markers join into one showing how many photos it holds, and clicking it lists them, see [plan 0004](docs/plans/0004-phase1-hardening-before-phase2.md) Part F
 
 ## Phase 2: Locations & species

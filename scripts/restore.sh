@@ -7,7 +7,9 @@ usage() {
 Usage: scripts/restore.sh [--force] BACKUP_DIR
 
 Replaces the database with the backup's and puts its photo files in place, then restarts the backend, which
-migrates an older backup to the current schema, and checks the files (verify-files).
+migrates an older backup to the current schema, and checks the files (verify-files). A backup from an older
+PostgreSQL (the 17 image used before November 2026) restores too: extensions its image installed that this one
+no longer has (the tiger geocoder) are skipped, with a note; the app only needs postgis.
 
 The stack must be running (on a new machine: docker compose up -d first). Without --force, an install that
 already has accounts is left alone. With it, the current database is replaced and the current photo files are
@@ -78,13 +80,53 @@ if [ "$(sql "SELECT to_regclass('public.users') IS NOT NULL")" = t ]; then
 fi
 
 # 4. Restore into a side database first, so a failure leaves the current one untouched.
+#
+# The dump lists every extension of the source database, not only postgis, which is all the app needs: the
+# PostGIS 17 image installed postgis_tiger_geocoder (with fuzzystrmatch) and postgis_topology into every database,
+# and PostGIS 3.7 dropped the geocoder, so a dump from 17 names an extension the 18 image cannot create. The
+# dump's table of contents is therefore filtered first: extensions this server has are restored, each with the
+# schema it is tied to (pg_available_extension_versions says which); the others are skipped together with their
+# schemas and config-table data, and named. Everything in public, where the app's tables are, is always restored.
 echo "Restoring the database"
 # shellcheck disable=SC2016
 $compose exec -T -e PGOPTIONS="-c client_min_messages=warning" db sh -c 'dropdb -U "$POSTGRES_USER" --if-exists --force "${POSTGRES_DB}_restore" &&
     createdb -U "$POSTGRES_USER" "${POSTGRES_DB}_restore"'
 # shellcheck disable=SC2016
-if ! $compose exec -T db sh -c 'pg_restore --exit-on-error --single-transaction --no-owner --no-acl \
-        -U "$POSTGRES_USER" -d "${POSTGRES_DB}_restore"' <"$src/db.dump"; then
+if ! $compose exec -T db sh -c '
+        set -eu
+        trap "rm -f /tmp/restore.dump /tmp/restore.toc /tmp/restore.ext /tmp/restore.awk /tmp/restore.list" EXIT
+        cat >/tmp/restore.dump
+        pg_restore -l /tmp/restore.dump >/tmp/restore.toc
+        psql -X -q -tA -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres -F " " \
+            -c "SELECT DISTINCT name, coalesce(schema, chr(45)) FROM pg_available_extension_versions" >/tmp/restore.ext
+        cat >/tmp/restore.awk <<"AWK"
+# First file: extensions this server has, with the schema each is tied to (- for none). Second: the TOC, whose
+# lines read "<id>; <catalog> <oid> <TYPE> <schema or -> <name> <owner>"; a line starting with ; is left out.
+NR == FNR { available[$1] = $2; next }
+{ line[++n] = $0 }
+$4 == "EXTENSION" && $5 == "-" {
+    if ($6 in available) { if (available[$6] != "-") schema_ok[available[$6]] = 1 } else dropped_ext[$6] = 1
+}
+$4 == "TABLE" && $5 != "DATA" { schema_ok[$5] = 1 }
+END {
+    schema_ok["public"] = 1
+    for (i = 1; i <= n; i++) {
+        split(line[i], f, " ")
+        skip = 0
+        if (f[4] == "EXTENSION" && f[5] == "-" && (f[6] in dropped_ext)) skip = 1
+        else if (f[4] == "COMMENT" && f[6] == "EXTENSION" && (f[7] in dropped_ext)) skip = 1
+        else if (f[4] == "SCHEMA" && f[5] == "-" && !(f[6] in schema_ok)) { skip = 1; dropped_schema[f[6]] = 1 }
+        else if (f[4] == "COMMENT" && f[6] == "SCHEMA" && !(f[7] in schema_ok)) skip = 1
+        else if (f[4] == "TABLE" && f[5] == "DATA" && !(f[6] in schema_ok)) skip = 1
+        print (skip ? ";" : "") line[i]
+    }
+    for (e in dropped_ext) print "Skipping extension " e ": this PostGIS image does not have it (the app does not use it)" > "/dev/stderr"
+    for (s in dropped_schema) print "Skipping schema " s " and its data: it belonged to a skipped extension" > "/dev/stderr"
+}
+AWK
+        awk -f /tmp/restore.awk /tmp/restore.ext /tmp/restore.toc >/tmp/restore.list
+        pg_restore --exit-on-error --single-transaction --no-owner --no-acl -L /tmp/restore.list \
+            -U "$POSTGRES_USER" -d "${POSTGRES_DB}_restore" /tmp/restore.dump' <"$src/db.dump"; then
     # shellcheck disable=SC2016
     $compose exec -T db sh -c 'dropdb -U "$POSTGRES_USER" --if-exists "${POSTGRES_DB}_restore"' || true
     die "pg_restore failed; nothing was changed"

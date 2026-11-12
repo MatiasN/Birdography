@@ -3,19 +3,21 @@
 ## Requirements
 
 - Docker with Docker Compose
-- [uv](https://docs.astral.sh/uv/) (Python 3.14 is installed by uv if missing)
-- Node.js 24
+- [uv](https://docs.astral.sh/uv/) (Python 3.15 is installed by uv if missing)
+- Node.js 26 (the current LTS; CI and the Docker image use it too)
 - [ExifTool](https://exiftool.org/) when running the backend or its tests outside Docker. CI and the Docker image install the version pinned in `backend/scripts/install_exiftool.py` (currently 13.63); to get the same one locally, run `sudo python3 backend/scripts/install_exiftool.py`, or use `--prefix ~/.local` for a user install. Distribution packages (`apt install libimage-exiftool-perl`, `brew install exiftool`) work too but may be older. To upgrade the pin, change `VERSION` and `SHA256` in that script, using the values from https://exiftool.org/checksums.txt. It reads all photo metadata and extracts RAW previews; without it uploads still succeed but get neither (`reread-metadata` repairs them later). Tests that need it are skipped when it is missing; `GET /health` reports the version in use.
 
 ## Project layout
 
 ```
-backend/    FastAPI app, Alembic migrations, pytest suite
+backend/    FastAPI app, Alembic migrations, pytest suite; devtools/ has the dev stack's seeder
 frontend/   React + Vite app
 docs/plans/ Design plans for roadmap items
-scripts/    backup.sh and restore.sh, run on the Docker host
+scripts/    backup.sh and restore.sh, run on the Docker host; dev.sh, the dev stack
 docker-compose.yml       db, backend, frontend
 compose.override.yml     dev extras, loaded automatically (backend hot reload)
+compose.dev.yml          dev stack extras, loaded by scripts/dev.sh only (the seeder)
+.dev/                    the dev stack's settings and photos, created by scripts/dev.sh; not in git
 ```
 
 ## Setup
@@ -33,6 +35,98 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 The backend, the CLI and alembic refuse to start while either still contains `change-me` (the `.env.example` placeholders) or `SECRET_KEY` is shorter than 32 characters.
 
 ## Running
+
+### Dev stack
+
+The quickest way to a working app: one command starts everything in Docker with a known login and photos
+already on the map, apart from any real install on the same machine.
+
+```bash
+scripts/dev.sh up
+```
+
+Open http://localhost:3001 and log in as `dev@birdography.local` / `birdography-dev`. The first run builds the
+images and generates about 300 photos (a minute or so); later runs start in seconds and keep your data. Needs
+Docker with Compose and bash; Node.js only for `--vite`. No `.env` needed: the script generates its own secrets.
+
+| Command | |
+|---------|---|
+| `scripts/dev.sh up [options]` | start (building images), create the dev user, seed photos if it has none, print URLs and login |
+| `scripts/dev.sh info` | URLs, login, number of photos, where the settings are |
+| `scripts/dev.sh seed [options] [--replace]` | add photos; `--replace` deletes the dev user's photos first |
+| `scripts/dev.sh reset [options]` | delete the dev database and photos and start over (`up` with a fresh database) |
+| `scripts/dev.sh down [--volumes]` | stop; `--volumes` also deletes the dev database |
+| `scripts/dev.sh logs [service]` | follow the logs |
+| `scripts/dev.sh <anything else>` | passed to `docker compose` for the dev stack, e.g. `scripts/dev.sh exec backend python -m app.cli verify-files` |
+
+Options of `up` and `reset`. They are saved to `.dev/config.env`, so later commands keep them without repeating:
+
+| Option | Default | |
+|--------|---------|---|
+| `--docker` / `--vite` | `--docker` | everything in Docker, or the frontend with Vite hot reload (see below) |
+| `--data-dir DIR` | `.dev/photos` | photo files; must be empty or created by the script |
+| `--http-port PORT` | 3001 | web UI (docker mode) |
+| `--api-port PORT` | 8001 | API, `/docs` at `http://localhost:PORT/docs` |
+| `--db-port PORT` | 5433 | PostgreSQL, for psql or a database client |
+| `--vite-port PORT` | 5174 | Vite (vite mode) |
+| `--auto-ports` | | move each port that is taken to the next free one, instead of stopping |
+| `--user EMAIL` | `dev@birdography.local` | dev login |
+| `--password PASSWORD` | `birdography-dev` | at least 10 characters |
+| `--photos N` | 300 | photos to seed into an empty account; 0 for none |
+| `--region NAME` | `portugal` | where hotspots are: `portugal`, `iberia`, `europe`, `world`, or a box `lat1,lon1,lat2,lon2` |
+| `--hotspots N` | 15 | spots photos gather around, a few busy and many quiet |
+| `--same-spot-pct N` | 5 | % of photos exactly on one of the 3 busiest hotspots, which never split on the map |
+
+`seed` takes `--photos`, `--region`, `--hotspots` and `--same-spot-pct` for that run only, without saving them.
+`up` seeds only an account without photos, so `up --photos 2000` on a seeded stack changes nothing: use
+`seed --photos 2000` to add, or `reset --photos 2000` to start over.
+
+Ports default to one above a real install's (3000, 8000, 5432, 5173), so both run side by side. Before starting,
+`up` checks every port it will publish and stops on a taken one, naming the option to change; ports the dev
+stack holds itself count as free.
+
+**Vite mode.** `scripts/dev.sh up --vite` starts the database and the backend in Docker, then runs `npm run dev`
+in the foreground on `--vite-port`, proxying `/api` to the dev backend; it runs `npm ci` first when needed. Ctrl-C
+stops Vite only; the containers keep running until `scripts/dev.sh down`. The backend reloads on code changes in
+both modes. `--docker` switches back.
+
+**Settings file.** `.dev/config.env` is created on the first run with every setting and a comment on each. The
+ones without an option are only set there:
+
+| Setting | Default | |
+|---------|---------|---|
+| `DEV_BIND_ADDRESS` | `127.0.0.1` | `0.0.0.0` to try the app from a phone on your network. The dev password is public, so only on a network you trust |
+| `DEV_PROJECT` | `birdography-dev` in a folder named Birdography, `birdography-dev-<folder>` in any other | Compose project; containers and the database volume are named after it. Unique per checkout, so worktrees don't share a stack |
+| `SEED_SPREAD_KM` | 1.5 | how far photos land from their hotspot (standard deviation) |
+| `SEED_NO_GPS_PCT` | 5 | photos without GPS, to place on the map by hand |
+| `SEED_YEARS` | 3 | photos are dated over this many past years |
+| `SEED_IMAGE_PX` | 1600 | long side of the generated JPEGs; larger is slower and takes more disk |
+| `SEED_RANDOM` | 42 | random seed: the same value gives the same photos |
+| `POSTGRES_PASSWORD`, `SECRET_KEY` | random | generated once. The database takes its password only when it is created: if you change it, `up` says so, and `reset` starts over with the new one |
+
+The file is also the backend's env file, so any backend setting from [Settings](#settings) can be added there
+(`ALLOW_REGISTRATION=true`, `MAX_UPLOAD_MB=5`…) and applies on the next `up`. One `KEY=value` per line, without
+quotes or spaces. Delete the file to go back to the defaults; delete `.dev/` entirely, after `scripts/dev.sh down
+--volumes`, to remove every trace.
+
+**The photos.** Each one is a JPEG generated on the spot: a gradient in its hotspot's colours with the photo's
+number and spot on it, and EXIF with GPS, date, camera, lens and exposure. Cameras are the bodies of the RAW test
+fixtures, so the camera filter has choices. About half record their UTC offset; the others get it from their
+position, as photos from older cameras do. They go through the same code as an upload (`photos.ingest`), so
+metadata, time zones and thumbnails are what a real upload would give. Photo number *n* is always the same image at
+the same place for a given `SEED_RANDOM`, which helps reproduce a bug. Expect about 0.2 s and 60 KB per photo.
+
+**Isolation and safety.** The dev stack has its own Compose project, database volume, settings file and photo
+folder, and publishes only on `127.0.0.1` by default, so it never touches a real install's `.env`, `db-data` or
+`./data/photos`. `reset` empties only a folder with the script's `.birdography-dev` marker in it, and `up` refuses a
+non-empty folder without one, so `--data-dir` can't be pointed at a real photo library by mistake. The seeder
+(`backend/devtools/seed.py`) is not in the production image and refuses to run without `BIRDOGRAPHY_DEV=1`, which
+only `compose.dev.yml` sets.
+
+Everything the script creates is under `.dev/`, which git ignores: settings, secrets and photos stay on your
+machine.
+
+The rest of this section is the manual way, with the real `.env`.
 
 ### Everything in Docker
 
@@ -113,6 +207,7 @@ In `.env` or the environment. A test (`tests/test_config.py`) fails when a backe
 | `TRUSTED_PROXIES` | empty | addresses or CIDRs of a reverse proxy in front of the frontend (space or comma separated), whose `X-Forwarded-For` is then trusted |
 | `CLIENT_MAX_BODY_SIZE` | `75m` | nginx request limit; keep it above `MAX_RAW_UPLOAD_MB` |
 | `API_URL` | `http://localhost:8000` | where `npm run dev` proxies `/api` (Vite only) |
+| `ENV_FILE` | `.env` | file the `db` and `backend` containers read their settings from; `scripts/dev.sh` points it at `.dev/config.env` |
 
 `GET /health` reports the upload limits and the ExifTool version in use (`null` if it is missing).
 
@@ -144,6 +239,37 @@ A backup is a directory with `db.dump` (`pg_dump`, run inside the db container s
 On a new machine, start the stack first (`docker compose up -d`), then restore. Delete `.pre-restore-*` once you have checked the result.
 
 Both scripts call `docker compose`; set `COMPOSE` for anything else, for example `COMPOSE="docker compose -p birdography" scripts/backup.sh`.
+
+### Upgrading PostgreSQL
+
+The database image moved from `postgis/postgis:17-3.5` to `postgis/postgis:18-3.7` in November 2026. A PostgreSQL
+major version cannot read the previous one's data files, and the 18 images also keep their data in a versioned
+subdirectory of the mount (`/var/lib/postgresql/18/docker`, where 17 used `/var/lib/postgresql/data`). An install
+that pulls this change and runs `docker compose up` **does not lose anything**: the `db` container stops with a
+message about `pg_upgrade` and `docker compose up --wait` fails, with the 17 data untouched in the `db-data`
+volume. To move it over, take a backup on the old version and restore it on the new one:
+
+```bash
+git fetch                                            # but don't switch yet: the stack must still be on 17
+scripts/backup.sh /safe/place                        # on 17, with the stack running
+docker compose down
+docker volume rm <project>_db-data                   # the backup is the copy; <project> is the folder name, see `docker volume ls`
+git pull                                             # now 18
+docker compose up -d --build --wait                  # empty 18 database, migrations run
+scripts/restore.sh /safe/place/birdography-<date>    # no --force needed: the new install has no accounts yet
+```
+
+To keep the 17 data for a rollback instead of removing it, copy the volume first:
+`docker run --rm -v <project>_db-data:/from:ro -v birdography-pg17:/to alpine cp -a /from/. /to/`. Delete
+`birdography-pg17` once the restored install has been checked.
+
+`restore.sh` prints `Skipping extension postgis_tiger_geocoder` (and `fuzzystrmatch`, and the `tiger` and
+`tiger_data` schemas) when restoring a 17 backup: the 17 image installed those into every database and PostGIS 3.7
+no longer ships the geocoder. The app uses `postgis` only, so nothing of yours is left behind. The photos restore
+as always, and the result was checked byte for byte on a 17 install upgraded this way (plan 0006). CI restores a
+17 backup (`scripts/fixtures/backup-pg17/`) on every run, so this path stays tested.
+
+The dev stack (`scripts/dev.sh`) holds disposable data: `scripts/dev.sh reset` gives it a fresh 18 database.
 
 `python -m app.cli verify-files [--checksums]` compares the catalog with the photo directory: files missing or with the wrong size (or hash, with `--checksums`, which reads everything) fail it, and files no row refers to are listed. Run it after restoring photos from your own file backup.
 
@@ -277,4 +403,10 @@ cd frontend && npm run lint && npm run format
 
 The frontend is linted with [oxlint](https://oxc.rs/docs/guide/usage/linter) (`.oxlintrc.json`) rather than ESLint: its type-aware rules run on `oxlint-tsgolint`, which is built on the TypeScript 7 compiler, while typescript-eslint does not support TypeScript 7. `npm run lint` fails on warnings too. Besides correctness rules it checks promises (`no-floating-promises`, `no-misused-promises`: use `void` for fire-and-forget calls and wrap async handlers as `onClick={() => void save()}`), hooks dependencies, and accessibility (clickable elements must be buttons or links).
 
-CI runs lint, format checks, backend and frontend tests with their coverage gates, `alembic check` and the frontend build on every push and pull request. Dependabot opens weekly update PRs (`.github/dependabot.yml`), holding each version bump until the release is 2 days old; security fixes are not delayed (they come from the repository's Dependabot security updates setting). A `deploy` job also runs shellcheck on the scripts, starts the production stack, checks that only the UI is published and that the backend runs unprivileged, then backs up, deletes everything, restores and compares the restored photo with the original.
+CI runs lint, format checks, backend and frontend tests with their coverage gates, `alembic check` and the frontend build on every push and pull request. A `deploy` job also runs shellcheck on the scripts, starts the production stack, checks that only the UI is published and that the backend runs unprivileged, then backs up, deletes everything, restores and compares the restored photo with the original; it also restores a backup from the PostGIS 17 image and starts the dev stack.
+
+## Dependabot
+
+Dependabot opens weekly update PRs (`.github/dependabot.yml`): one grouped PR per ecosystem for minor and patch bumps, majors on their own, each held until the release is 2 days old. Security fixes are not delayed (they come from the repository's Dependabot security updates setting). Majors of `node` and `postgis/postgis` are ignored on purpose: a Node major moves the Dockerfile, CI and this file together, to an LTS line only; a PostgreSQL major needs the data migration in [Upgrading PostgreSQL](#upgrading-postgresql). Dependabot does not track the PostGIS image of CI's `services` block or the Node version in CI, so those follow the compose file and the Dockerfile by hand.
+
+Minor and patch PRs merge on their own: `.github/workflows/dependabot-auto-merge.yml` approves a Dependabot PR whose update type is minor or patch and whose compatibility score is at least `DEPENDABOT_AUTO_MERGE_MIN_SCORE` (a repository variable, 90 if unset; the score is Dependabot's share of other repositories where the same update kept CI green, and a dependency without data counts as 0), then turns on GitHub's auto-merge. GitHub squash-merges when the `main` ruleset is satisfied: required checks green on the current head, branch up to date, review present. The workflow needs three repository settings: "Allow auto-merge" (General), "Allow GitHub Actions to create and approve pull requests" (Actions → General), and a `main` ruleset whose review rule the bot's approval satisfies (not "Require review from Code Owners") and whose required checks include `deploy`. Every Dependabot PR gets a line in the workflow's summary saying whether it was queued or left for review; majors and low or unknown scores are left.
