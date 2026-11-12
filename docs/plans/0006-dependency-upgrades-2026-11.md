@@ -299,3 +299,10 @@ gate. Nothing merges until three repository settings change (not done from here,
 `frontend` as required checks (`deploy` should be added: it is where image bumps are tested, and the reason the
 Dependabot PRs' failures went unseen). Considered and rejected: a ruleset bypass for the GitHub Actions app, which
 would skip the required checks too and let the bot merge before CI finished.
+
+**2026-11-12, auto-merge without a score.** The first two Dependabot PRs after the settings changed (#19, a
+fastapi patch in the python group, and #16, the uvicorn floor) were both left for review: fetch-metadata reported a
+compatibility score of 0, meaning Dependabot had no data, and the workflow counted that as too low. #19 was merged
+by hand. With no data being the usual case, that rule held back every PR, so a missing score now leaves the
+decision to CI (100% coverage gates, the `deploy` job, the 2-day cooldown); only a known score below the minimum
+holds a PR back.

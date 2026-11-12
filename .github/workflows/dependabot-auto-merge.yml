@@ -1,9 +1,9 @@
 # Merges Dependabot's minor and patch updates on their own once CI is green, so only majors need a person.
 #
-# What it does: for a Dependabot PR whose update type is minor or patch and whose compatibility score (the share
-# of other repositories where the same update kept CI green, as Dependabot reports it) is at least
-# DEPENDABOT_AUTO_MERGE_MIN_SCORE (a repository variable, 90 by default), it approves the PR and turns on GitHub's
-# auto-merge. GitHub then squash-merges when every rule of the `main` ruleset is met: the required checks green on
+# What it does: for a Dependabot PR whose update type is minor or patch, it approves the PR and turns on GitHub's
+# auto-merge, unless Dependabot reports a compatibility score (the share of other repositories where the same update
+# kept CI green) below DEPENDABOT_AUTO_MERGE_MIN_SCORE (a repository variable, 90 by default). Most updates have no
+# score, and then CI alone decides. GitHub then squash-merges when every rule of the `main` ruleset is met: the required checks green on
 # the current head, the branch up to date, the review present. Nothing merges here; the ruleset decides when.
 #
 # What it needs, in the repository settings (see CONTRIBUTING.md → Dependabot):
@@ -43,15 +43,17 @@ jobs:
             version-update:semver-minor | version-update:semver-patch) type_ok=1 ;;
             *) type_ok=0 ;;
           esac
-          # fetch-metadata reports the highest score among the updated dependencies; 0 or empty means Dependabot
-          # has no data for them, which is not "high compatibility".
+          # fetch-metadata reports the highest score among the updated dependencies, and 0 or empty when Dependabot
+          # has no data for them. That is the usual case (every PR of November 2026, grouped or single), so a
+          # missing score leaves the decision to CI; only a known score below the minimum holds a PR back.
           case "$SCORE" in '' | *[!0-9]*) score=0 ;; *) score=$SCORE ;; esac
-          if [ "$type_ok" = 1 ] && [ "$score" -ge "$MIN_SCORE" ]; then
+          if [ "$score" = 0 ]; then note="no compatibility score"; else note="compatibility score $score (minimum $MIN_SCORE)"; fi
+          if [ "$type_ok" = 1 ] && { [ "$score" = 0 ] || [ "$score" -ge "$MIN_SCORE" ]; }; then
             echo "merge=true" >>"$GITHUB_OUTPUT"
-            echo "Auto-merge: ${GROUP:-$DEPS}, $UPDATE_TYPE, compatibility score $score (minimum $MIN_SCORE)" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "Auto-merge: ${GROUP:-$DEPS}, $UPDATE_TYPE, $note" | tee -a "$GITHUB_STEP_SUMMARY"
           else
             echo "merge=false" >>"$GITHUB_OUTPUT"
-            echo "Left for review: ${GROUP:-$DEPS}, ${UPDATE_TYPE:-unknown update type}, compatibility score ${SCORE:-unknown} (minimum $MIN_SCORE)" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "Left for review: ${GROUP:-$DEPS}, ${UPDATE_TYPE:-unknown update type}, $note" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Approve and enable auto-merge
@@ -60,5 +62,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.html_url }}
         run: |
-          gh pr review --approve --body "Minor or patch update with a high compatibility score; merges when CI is green (dependabot-auto-merge.yml)." "$PR"
+          gh pr review --approve --body "Minor or patch update without a low compatibility score; merges when CI is green (dependabot-auto-merge.yml)." "$PR"
           gh pr merge --auto --squash "$PR"

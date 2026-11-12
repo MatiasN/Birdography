@@ -3,8 +3,8 @@
 # yanked within hours never reaches a PR. Security updates (enabled in the repository settings under Dependabot)
 # are NOT delayed by cooldown: a fix for a known vulnerability arrives immediately.
 #
-# Grouped minor and patch PRs are merged by .github/workflows/dependabot-auto-merge.yml once CI is green and
-# Dependabot's compatibility score is high enough; majors wait for a person.
+# Minor and patch PRs are merged by .github/workflows/dependabot-auto-merge.yml once CI is green, unless
+# Dependabot reports a low compatibility score; majors wait for a person.
 #
 # Not tracked by Dependabot, so they must follow by hand: the PostGIS image of the CI `services` block and the
 # Node version in ci.yml and CONTRIBUTING (kept equal to the compose file and the frontend Dockerfile).
