@@ -40,7 +40,3 @@ logs/
 !.vscode/extensions.json
 .DS_Store
 Thumbs.db
-
-# Local drafts
-project_roadmap.md
-project_readme.md

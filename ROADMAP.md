@@ -23,29 +23,48 @@ Photo handling, species data and a first look at the map.
 - [x] Photo catalog UI with filters by species, date and camera
 - [x] Map with photo markers: every located photo, no 200-photo limit; nearby markers join into one showing how many photos it holds, and clicking it lists them, see [plan 0004](docs/plans/0004-phase1-hardening-before-phase2.md) Part F
 
+## Phase 1.5: UI overhaul
+
+A modern look that suits both desktop and phone, and the navigation the next phases fill in. Tabs whose features
+arrive later get a placeholder saying what is coming, so the layout is settled before Phase 2 builds on it.
+
+- [ ] Page designs: mockups of every tab (Catalogue, Species, Upload, Map, Near me) and the photo detail, each in a wide-screen and a narrow-screen version, agreed before building them
+- [ ] Design foundation: a modern visual style (type, colors, spacing, light and dark themes) and a small set of shared components (buttons, cards, inputs, sheets, empty states) used by every page
+- [ ] Adaptive layout: the UI follows the screen it is on; wide screens get a desktop layout (sidebar or top navigation, multi-column pages, details beside the list), narrow screens a phone layout (bottom tab bar, single column, details as full-screen sheets, large touch targets); tabs **Catalogue**, **Species**, **Upload**, **Map** and **Near me**; a profile page opened from the account menu (in the sidebar or top bar on wide screens, behind an avatar on phones) holding account settings and logout, with room for the stats added in Phase 3
+- [ ] Catalogue tab: the current photo grid and filters in the new style, with room for the grouping added in Phase 2
+- [ ] Upload tab: uploading moves out of the catalogue into its own tab; drag and drop or the phone's photo picker, progress per file, and species picked while uploading (search in all three languages, applied to the batch or to one photo, new species added on the spot)
+- [ ] Map tab: unchanged apart from the new style
+- [ ] Empty states: a new account with no photos sees what each tab does and how to start, not a blank page
+- [ ] Polished README: a header with logo and badges (CI, license, latest release), screenshots of the new UI on desktop and phone (light and dark), a short feature tour, and a cleaner quick start; screenshots taken from the dev stack so they show real-looking data
+
 ## Phase 2: Locations & species
 
 Turn the catalog into a field guide.
 
+- [ ] Built-in species list: the eBird taxonomy loaded with English, Portuguese and scientific names, eBird code and taxonomic order, so the upload picker and the Species and Near me tabs know every species, not only the ones already photographed
+- [ ] Regions for every photo: continent, country and region (state, district) worked out from its position, using eBird region codes so they match the checklists of Phase 3
 - [ ] Group photos into location stops
+- [ ] Catalogue grouping: group by location (continent, country or region, then stop) or by species
 - [ ] Stop detail: all species photographed at a stop
 - [ ] Species page: photos and names in all three languages
 - [ ] Location search
-- [ ] "Close to me": species likely near your current position
+- [ ] Near me tab: species likely around your position or a searched place (recent eBird observations; eBird API key in `.env`, results cached), each marked as photographed or not yet
 
 ## Phase 3: Gap tracking
 
 Track what you still need to photograph.
 
-- [ ] Regional checklists
-- [ ] Missing species per location
-- [ ] Life list and stats dashboard
+- [ ] Regional checklists: the species expected in a continent, country or region (eBird region species lists)
+- [ ] Species tab: pick a region and see the species you photographed there and the ones still missing
+- [ ] "Feeling lucky?" in Near me: one species you have not photographed that you are most likely to find nearby now, ranked by how often it is reported in recent checklists close to you and in this season, with the nearest spot where it was seen
+- [ ] Life list in the Species tab: with no region picked ("everywhere"), the tab lists every species you have photographed
+- [ ] Stats on the profile page: totals at the top (species, photos, locations), progress over time, breakdown by family, most-photographed locations; account settings stay below
 
 ## Phase 4: Integrations & polish
 
 Make it fast and useful in the field.
 
-- [ ] eBird CSV import/export; the import also fills `ebird_code` and `taxon_order` on species
+- [ ] eBird CSV import/export; the import also fills `ebird_code` and `taxon_order` on species, and brings in your checklist history so locations and target species are filled in
 - [ ] PWA: offline cache, install to home screen
 - [ ] Full-text search across notes, tags, locations and names
 - [ ] Compression and external storage (NAS, S3-compatible)
