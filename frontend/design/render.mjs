@@ -27,16 +27,19 @@ const QUALITY = 0.85;
 
 /** PNG screenshot → WebP, encoded by Chromium itself so there's no image library to install. */
 async function toWebp(tab, png) {
-  const dataUrl = await tab.evaluate(async ([b64, quality]) => {
-    const img = new Image();
-    img.src = `data:image/png;base64,${b64}`;
-    await img.decode();
-    const canvas = document.createElement("canvas");
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-    canvas.getContext("2d").drawImage(img, 0, 0);
-    return canvas.toDataURL("image/webp", quality);
-  }, [png.toString("base64"), QUALITY]);
+  const dataUrl = await tab.evaluate(
+    async ([b64, quality]) => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${b64}`;
+      await img.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.getContext("2d").drawImage(img, 0, 0);
+      return canvas.toDataURL("image/webp", quality);
+    },
+    [png.toString("base64"), QUALITY],
+  );
   return Buffer.from(dataUrl.split(",")[1], "base64");
 }
 
