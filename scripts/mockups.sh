@@ -1,5 +1,5 @@
 #!/bin/sh
-# Render the Phase 1.5 mockups (frontend/design/*.html) to docs/design/*.png, see docs/plans/0007.
+# Render the Phase 1.5 mockups (frontend/design/*.html) to docs/design/*.webp, see docs/plans/0007.
 # Uses the official Playwright image, so no browser is installed on the host and Playwright is not a project
 # dependency. Needs Docker, frontend/node_modules (npm ci) and internet access for the OpenStreetMap tiles.
 #
