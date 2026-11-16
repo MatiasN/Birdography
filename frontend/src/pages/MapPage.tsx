@@ -1,7 +1,12 @@
 import { divIcon, type LeafletKeyboardEvent, type Map as LeafletMap } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ZoomInIcon } from "lucide-react";
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import ResponsivePanel from "@/components/ResponsivePanel";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { usePhotoParam } from "@/usePhotoParam";
 import { api, fileUrl, type Photo } from "../api";
 import {
   countLabel,
@@ -14,10 +19,14 @@ import {
   type Point,
 } from "../clusters";
 import GroupPanel from "../GroupPanel";
+import InvalidateOnResize from "../InvalidateOnResize";
 import { ATTRIBUTION, DEFAULT_CENTER, DEFAULT_ZOOM, OSM } from "../map";
 import PhotoDetail from "../PhotoDetail";
 
-/** Every marker is a MARKER_PX circle: a thumbnail for one photo, a count for a group. */
+/**
+ * Every marker is a MARKER_PX circle: a thumbnail for one photo, a count for a group. The white ring stays white in
+ * the dark theme because the tiles stay light (D9).
+ */
 const icon = (item: MapItem) =>
   divIcon({
     className: "",
@@ -26,8 +35,8 @@ const icon = (item: MapItem) =>
       item.kind === "photo"
         ? // A background, not an <img>: Leaflet's CSS forces `width: auto` on images in the marker pane, which
           // would stretch the circle to the photo's aspect ratio.
-          `<span class="block w-full h-full rounded-full bg-cover bg-center border-2 border-white shadow bg-stone-300" style="background-image: url('${fileUrl(item.id)}')"></span>`
-        : `<span class="w-full h-full rounded-full grid place-items-center bg-emerald-700 text-white text-xs font-semibold border-2 border-white shadow">${countLabel(item.count)}</span>`,
+          `<span class="block size-full rounded-full bg-muted bg-cover bg-center border-2 border-white shadow-md" style="background-image: url('${fileUrl(item.id)}')"></span>`
+        : `<span class="size-full rounded-full grid place-items-center bg-primary text-primary-foreground text-xs font-semibold border-2 border-white shadow-md">${countLabel(item.count)}</span>`,
   });
 
 /** A group marker the user clicked: its photos, and a way to zoom until it splits (none for a single spot). */
@@ -94,15 +103,20 @@ export default function MapPage() {
   const [points, setPoints] = useState<Point[] | null>(null);
   const [group, setGroup] = useState<Group | null>(null);
   const [photo, setPhoto] = useState<Photo | null>(null);
+  const { photoId, open: openPhoto, close: closePhoto } = usePhotoParam();
 
   const index = useMemo(() => (points ? new PhotoClusters(points) : null), [points]);
 
   const load = useCallback(() => api<Point[]>("/photos/points").then(setPoints), []);
   useEffect(() => void load(), [load]);
 
-  const openPhoto = useCallback((id: number) => void api<Photo>(`/photos/${id}`).then(setPhoto), []);
+  // The open photo comes from the URL (?photo=), so a link or a reload opens it too.
+  useEffect(() => {
+    if (photoId !== null) api<Photo>(`/photos/${photoId}`).then(setPhoto, closePhoto); // gone: drop it from the URL
+  }, [photoId, closePhoto]);
+  const shown = photo?.id === photoId ? photo : null; // the fetched photo, once it matches the URL
+
   const closeGroup = useCallback(() => setGroup(null), []);
-  const closePhoto = useCallback(() => setPhoto(null), []);
 
   function changed(fresh: Photo) {
     setPhoto(fresh);
@@ -113,36 +127,53 @@ export default function MapPage() {
   const zoomIn = group?.zoomIn;
 
   return (
-    <div className="relative flex-1 flex">
-      <MapContainer center={DEFAULT_CENTER} zoom={DEFAULT_ZOOM} maxZoom={MAX_ZOOM} className="flex-1 min-h-[70vh]">
-        <TileLayer url={OSM} attribution={ATTRIBUTION} maxZoom={MAX_ZOOM} />
-        {index && <Markers index={index} onPhoto={openPhoto} onGroup={setGroup} />}
-      </MapContainer>
+    <div className="flex flex-1">
+      {/* isolate: Leaflet's controls (z-index 1000) stay inside the map instead of covering the phone sheet. */}
+      <div className="relative isolate h-[calc(100dvh-7.5rem)] min-w-0 flex-1 md:h-dvh">
+        <MapContainer center={DEFAULT_CENTER} zoom={DEFAULT_ZOOM} maxZoom={MAX_ZOOM} className="size-full">
+          <TileLayer url={OSM} attribution={ATTRIBUTION} maxZoom={MAX_ZOOM} />
+          <InvalidateOnResize />
+          {index && <Markers index={index} onPhoto={openPhoto} onGroup={setGroup} />}
+        </MapContainer>
 
-      {index?.size === 0 && (
-        <p className="absolute z-[1010] top-3 left-1/2 -translate-x-1/2 bg-white rounded shadow px-3 py-1 text-sm text-stone-600">
-          No photos with a position yet.
-        </p>
+        {index?.size === 0 && (
+          <Card className="absolute top-3 left-1/2 z-[1010] -translate-x-1/2 px-4 py-2 text-muted-foreground">
+            No photos with a position yet.
+          </Card>
+        )}
+      </div>
+
+      {/* One panel at a time: a photo opened from a group takes its place, and closing it brings the group back. */}
+      {shown ? (
+        <ResponsivePanel title="Photo details" onClose={closePhoto}>
+          <PhotoDetail photo={shown} onChange={changed} />
+        </ResponsivePanel>
+      ) : (
+        group && (
+          <ResponsivePanel
+            key={group.key}
+            title={`${group.photoIds.length} photos here`}
+            onClose={closeGroup}
+            actions={
+              zoomIn && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    zoomIn();
+                    setGroup(null);
+                  }}
+                >
+                  <ZoomInIcon />
+                  Zoom in
+                </Button>
+              )
+            }
+          >
+            <GroupPanel photoIds={group.photoIds} onOpen={openPhoto} />
+          </ResponsivePanel>
+        )
       )}
-
-      {group && (
-        <GroupPanel
-          key={group.key}
-          photoIds={group.photoIds}
-          onZoom={
-            zoomIn &&
-            (() => {
-              zoomIn();
-              setGroup(null);
-            })
-          }
-          onOpen={openPhoto}
-          onClose={closeGroup}
-          listening={!photo}
-        />
-      )}
-
-      {photo && <PhotoDetail photo={photo} onChange={changed} onClose={closePhoto} />}
     </div>
   );
 }

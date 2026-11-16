@@ -1,9 +1,11 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { JOIN_PX, MARKER_PX } from "../clusters";
 import { makePhoto, mockApi, type Routes } from "../test/api";
 import { clickMap, fakeMap } from "../test/leaflet";
+import { stubMatchMedia } from "../test/media";
+import { renderAt } from "../test/router";
 import MapPage from "./MapPage";
 
 vi.mock("react-leaflet", () => import("../test/leaflet"));
@@ -17,12 +19,14 @@ const SYDNEY = { lat: -33.9, lon: 151.2 };
 const markers = () => screen.queryAllByTestId("map-marker");
 const requests = (calls: { method: string; path: string }[]) => calls.map((c) => `${c.method} ${c.path}`);
 
-async function start(routes: Routes) {
+async function start(routes: Routes, path = "/map") {
   const calls = mockApi(routes);
-  render(<MapPage />);
+  const router = renderAt(<MapPage />, path);
   await waitFor(() => expect(requests(calls)).toContain("GET /photos/points"));
-  return calls;
+  return Object.assign(calls, { router });
 }
+
+const sheet = (name: string) => screen.findByRole("dialog", { name });
 
 beforeEach(() => fakeMap.reset());
 
@@ -75,15 +79,49 @@ describe("MapPage", () => {
     expect(lon).toBeCloseTo(-8, 6);
   });
 
-  it("opens a photo from its marker", async () => {
-    await start({
+  it("opens a photo from its marker, keeping it in the URL until it is closed", async () => {
+    const { router } = await start({
       "GET /photos/points": { body: [{ id: 7, ...PORTUGAL }] },
       "GET /photos/7": { body: makePhoto({ id: 7, camera: "NIKON Z 9" }) },
     });
     await userEvent.click(await screen.findByTitle("Open photo"));
-    const dialog = await screen.findByRole("dialog", { name: "Photo details" });
-    expect(within(dialog).getByText("NIKON Z 9")).toBeInTheDocument();
-    fireEvent.keyDown(window, { key: "Escape" });
+    expect(within(await sheet("Photo details")).getByText("NIKON Z 9")).toBeInTheDocument();
+    expect(router.state.location.search).toBe("?photo=7");
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(router.state.location.search).toBe("");
+  });
+
+  it("opens the photo of a link, and Back from the photo closes it", async () => {
+    const { router } = await start(
+      {
+        "GET /photos/points": { body: [{ id: 7, ...PORTUGAL }] },
+        "GET /photos/7": { body: makePhoto({ id: 7 }) },
+      },
+      "/map?photo=7",
+    );
+    expect(await sheet("Photo details")).toBeInTheDocument();
+    // Arrived with the link: closing drops the parameter instead of leaving the page.
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(router.state.location.pathname).toBe("/map");
+    expect(router.state.location.search).toBe("");
+
+    await userEvent.click(screen.getByTitle("Open photo"));
+    expect(await sheet("Photo details")).toBeInTheDocument();
+    await act(() => router.navigate(-1)); // the browser's Back button
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("drops a photo that can't be loaded from the URL", async () => {
+    const { router } = await start(
+      {
+        "GET /photos/points": { body: [] },
+        "GET /photos/99": { status: 404, body: { detail: "Photo not found" } },
+      },
+      "/map?photo=99",
+    );
+    await waitFor(() => expect(router.state.location.search).toBe(""));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
@@ -93,8 +131,7 @@ describe("MapPage", () => {
       "GET /photos/10": { body: makePhoto({ id: 10 }) },
     });
     await userEvent.click(await screen.findByTitle("3 photos"));
-    const panel = screen.getByRole("region", { name: "Photos at this spot" });
-    expect(within(panel).getByRole("heading")).toHaveTextContent("3 photos");
+    const panel = await sheet("3 photos here");
     const thumbnails = within(panel).getAllByRole("button", { name: /^Photo \d of 3$/ });
     expect(thumbnails.map((t) => t.querySelector("img")?.getAttribute("src"))).toEqual([
       "/api/photos/30/file?kind=thumbnail",
@@ -105,13 +142,13 @@ describe("MapPage", () => {
     expect(within(panel).queryByRole("button", { name: "Zoom in" })).not.toBeInTheDocument();
 
     await userEvent.click(thumbnails[1]);
-    expect(await screen.findByRole("dialog", { name: "Photo details" })).toBeInTheDocument();
-    // Escape closes the photo first, then the panel.
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Photos at this spot" })).toBeInTheDocument();
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(screen.queryByRole("region", { name: "Photos at this spot" })).not.toBeInTheDocument();
+    expect(await sheet("Photo details")).toBeInTheDocument();
+    // Escape closes the photo first, which brings the group back, then the group.
+    await userEvent.keyboard("{Escape}");
+    expect(await sheet("3 photos here")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Photo details" })).not.toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
   it("zooms into a group until it splits", async () => {
@@ -126,17 +163,17 @@ describe("MapPage", () => {
       },
     });
     await userEvent.click(await screen.findByTitle("2 photos"));
-    await userEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+    await userEvent.click(within(await sheet("2 photos here")).getByRole("button", { name: "Zoom in" }));
     expect(fakeMap.flyTo).toHaveBeenCalledWith([expect.any(Number), expect.any(Number)], zoom + 1);
-    expect(screen.queryByRole("region", { name: "Photos at this spot" })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.getAllByTitle("Open photo")).toHaveLength(2);
   });
 
-  it("closes the group panel from its button", async () => {
+  it("closes the group sheet with its Back button", async () => {
     await start({ "GET /photos/points": { body: [1, 2].map((id) => ({ id, ...PORTUGAL })) } });
     await userEvent.click(await screen.findByTitle("2 photos"));
-    await userEvent.click(screen.getByRole("button", { name: "Close" }));
-    expect(screen.queryByRole("region")).not.toBeInTheDocument();
+    await userEvent.click(within(await sheet("2 photos here")).getByRole("button", { name: "Back" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
   it("reloads the markers when a photo's position changes, without reframing the map", async () => {
@@ -147,8 +184,8 @@ describe("MapPage", () => {
     };
     const calls = await start(routes);
     await userEvent.click(await screen.findByTitle("2 photos"));
-    await userEvent.click(screen.getByRole("button", { name: "Photo 1 of 2" }));
-    const dialog = await screen.findByRole("dialog");
+    await userEvent.click(within(await sheet("2 photos here")).getByRole("button", { name: "Photo 1 of 2" }));
+    const dialog = await sheet("Photo details");
 
     routes["GET /photos/points"] = {
       body: [
@@ -160,7 +197,9 @@ describe("MapPage", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "Use this spot" }));
     await waitFor(() => expect(screen.getAllByTitle("Open photo")).toHaveLength(2));
     expect(requests(calls).filter((r) => r === "GET /photos/points")).toHaveLength(2);
-    expect(screen.queryByRole("region", { name: "Photos at this spot" })).not.toBeInTheDocument();
+    // The group may have split; closing the photo shows the map, not a stale group.
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(fakeMap.fitBounds).toHaveBeenCalledTimes(1);
   });
 
@@ -169,6 +208,49 @@ describe("MapPage", () => {
     expect(await screen.findByText("No photos with a position yet.")).toBeInTheDocument();
     expect(markers()).toEqual([]);
     expect(fakeMap.fitBounds).not.toHaveBeenCalled();
+  });
+
+  it("redraws the map when its container changes size (a panel opening beside it)", async () => {
+    const observed: Element[] = [];
+    let resize: (() => void) | undefined;
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(callback: () => void) {
+          resize = callback;
+        }
+        observe(element: Element) {
+          observed.push(element);
+        }
+        disconnect() {}
+      },
+    );
+    await start({ "GET /photos/points": { body: [] } });
+    expect(observed).toContain(fakeMap.getContainer());
+    resize?.();
+    expect(fakeMap.invalidateSize).toHaveBeenCalled();
+  });
+});
+
+describe("MapPage on a wide screen", () => {
+  beforeEach(() => stubMatchMedia(false, true));
+
+  it("shows the group and the photo in a side panel beside the map", async () => {
+    await start({
+      "GET /photos/points": { body: [1, 2].map((id) => ({ id, ...PORTUGAL })) },
+      "GET /photos/2": { body: makePhoto({ id: 2 }) },
+    });
+    await userEvent.click(await screen.findByTitle("2 photos"));
+    const group = screen.getByRole("complementary", { name: "2 photos here" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await userEvent.click(within(group).getByRole("button", { name: "Photo 2 of 2" }));
+    expect(await screen.findByRole("complementary", { name: "Photo details" })).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "2 photos here" })).not.toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" }); // the photo first
+    expect(await screen.findByRole("complementary", { name: "2 photos here" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
   });
 });
 
@@ -179,8 +261,8 @@ describe("keyboard", () => {
     });
     const group = await screen.findByTitle("2 photos");
     fireEvent.keyDown(group, { key: "Tab" }); // other keys do nothing
-    expect(screen.queryByRole("region")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     fireEvent.keyDown(group, { key });
-    expect(screen.getByRole("region", { name: "Photos at this spot" })).toBeInTheDocument();
+    expect(await sheet("2 photos here")).toBeInTheDocument();
   });
 });

@@ -4,7 +4,7 @@
  * - CircleMarker and Marker render as elements carrying their props; a Marker is a button showing its icon's HTML.
  * - `clickMap(lat, lon)` fires the map click handler (useMapEvents `click`).
  * - `fakeMap` is the map instance (useMap): its view is set with `fakeMap.view(bounds, zoom)`,
- *   which fires `moveend` like a pan or zoom; `fitBounds` and `flyTo` are spies. Reset it with `fakeMap.reset()`. */
+ *   which fires `moveend` like a pan or zoom; `fitBounds`, `flyTo` and `invalidateSize` are spies. Reset it with `fakeMap.reset()`. */
 import { act } from "@testing-library/react";
 import type { DivIcon } from "leaflet";
 import type { ReactNode } from "react";
@@ -22,6 +22,12 @@ class FakeMap {
   zoom = 6;
   fitBounds = vi.fn<(box: [LatLng, LatLng], options?: object) => void>();
   flyTo = vi.fn<(center: LatLng, zoom: number) => void>((_, zoom) => this.view(this.bounds, zoom));
+  invalidateSize = vi.fn<() => void>();
+  container = document.createElement("div");
+
+  getContainer() {
+    return this.container;
+  }
 
   getBounds() {
     const [west, south, east, north] = this.bounds;
@@ -45,6 +51,7 @@ class FakeMap {
     this.zoom = 6;
     this.fitBounds.mockClear();
     this.flyTo.mockClear();
+    this.invalidateSize.mockClear();
   }
 }
 

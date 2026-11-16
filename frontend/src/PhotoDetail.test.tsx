@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { Photo } from "./api";
@@ -10,9 +10,8 @@ vi.mock("react-leaflet", () => import("./test/leaflet"));
 
 function renderDetail(photo: Photo) {
   const onChange = vi.fn<(photo: Photo) => void>();
-  const onClose = vi.fn<() => void>();
-  const { unmount } = render(<PhotoDetail photo={photo} onChange={onChange} onClose={onClose} />);
-  return { onChange, onClose, unmount };
+  render(<PhotoDetail photo={photo} onChange={onChange} />);
+  return { onChange };
 }
 
 const markers = () => screen.queryAllByTestId("marker").map((m) => [m.dataset.center, m.dataset.color]);
@@ -22,20 +21,38 @@ describe("PhotoDetail", () => {
     renderDetail(
       makePhoto({ taken_at_local: "2026-05-01T09:00:00", taken_offset_minutes: -180, taken_at_manual: true }),
     );
-    expect(screen.getByRole("dialog", { name: "Photo details" })).toBeInTheDocument();
-    expect(
-      screen.getByText(new RegExp(`${new Date("2026-05-01T09:00:00").toLocaleString()}.*UTC-03:00.*set by you`)),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Taken").nextElementSibling).toHaveTextContent(
+      new RegExp(`${new Date("2026-05-01T09:00:00").toLocaleString()}.*UTC-03:00.*set by you`),
+    );
     expect(screen.getByText("NIKON Z 5")).toBeInTheDocument();
     expect(screen.getByText("NIKKOR Z 100-400mm")).toBeInTheDocument();
     expect(screen.getByText("ISO 800")).toBeInTheDocument();
+    expect(screen.getByText("f/5.6")).toBeInTheDocument();
+    expect(screen.getByText("1/500 s")).toBeInTheDocument();
+    expect(screen.getByText("400 mm")).toBeInTheDocument();
+    expect(screen.getByText("JPEG, 8 × 8 · 1 KB")).toBeInTheDocument();
     expect(document.querySelector("img")).toHaveAttribute("src", "/api/photos/1/file?kind=preview");
   });
 
   it("leaves out what is unknown", () => {
-    renderDetail(makePhoto({ taken_at_local: null, taken_offset_minutes: null, camera: null, lens: null, iso: null }));
+    renderDetail(
+      makePhoto({
+        taken_at_local: null,
+        taken_offset_minutes: null,
+        camera: null,
+        lens: null,
+        iso: null,
+        aperture: null,
+        shutter_seconds: null,
+        focal_length_mm: null,
+        files: [],
+      }),
+    );
     expect(screen.getByText("No date")).toBeInTheDocument();
     expect(screen.queryByText(/UTC|ISO|NIKON|set by you/)).not.toBeInTheDocument();
+    for (const label of ["Camera", "Lens", "Settings", "File"]) {
+      expect(screen.queryByText(label)).not.toBeInTheDocument();
+    }
   });
 
   it("explains where the position comes from", () => {
@@ -106,22 +123,16 @@ describe("PhotoDetail", () => {
     expect(markers()).toEqual([["1,2", "#b45309"]]); // kept, to try again
   });
 
-  it("closes with Escape, the backdrop or the Close button", async () => {
-    const { onClose } = renderDetail(makePhoto());
-    fireEvent.keyDown(window, { key: "Enter" });
-    expect(onClose).not.toHaveBeenCalled();
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(onClose).toHaveBeenCalledTimes(1);
-    const [backdrop, button] = screen.getAllByRole("button", { name: "Close" });
-    await userEvent.click(backdrop);
-    await userEvent.click(button);
-    expect(onClose).toHaveBeenCalledTimes(3);
-  });
-
-  it("stops listening for Escape once unmounted", () => {
-    const { onClose, unmount } = renderDetail(makePhoto());
-    unmount();
-    fireEvent.keyDown(window, { key: "Escape" });
-    expect(onClose).not.toHaveBeenCalled();
+  it("writes long exposures in seconds and big files in MB, without unknown dimensions", () => {
+    const original = makePhoto().files[0];
+    renderDetail(
+      makePhoto({
+        shutter_seconds: 2,
+        iso: null,
+        files: [{ ...original, format: "nef", width: null, height: null, size_bytes: 52.3 * 1024 * 1024 }],
+      }),
+    );
+    expect(screen.getByText("2 s")).toBeInTheDocument();
+    expect(screen.getByText("NEF · 52.3 MB")).toBeInTheDocument();
   });
 });
