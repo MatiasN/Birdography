@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Birdography">
+  <!-- A common kingfisher perched sideways on a branch, facing right. Flat shapes clipped to one silhouette. -->
+  <defs>
+    <clipPath id="bird">
+      <circle cx="40" cy="20" r="10"/>
+      <ellipse cx="31" cy="34" rx="10.5" ry="16" transform="rotate(32 31 34)"/>
+    </clipPath>
+  </defs>
+  <path d="M5 51.5H57" stroke="#7a5a40" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M45 51.5l5.5-5.5" stroke="#7a5a40" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M22.5 41.5L11 54.5l4.5 2L27 45z" fill="#135a85"/>
+  <path d="M27.5 44.5v6.5M32 43v8" stroke="#f07c2c" stroke-width="2" stroke-linecap="round"/>
+  <g clip-path="url(#bird)">
+    <rect width="64" height="64" fill="#1d80b8"/>
+    <ellipse cx="27" cy="32" rx="7.5" ry="14.5" transform="rotate(32 27 32)" fill="#135a85"/>
+    <path d="M32.5 23L21.5 40" stroke="#41c4ea" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M37.8 27H64v37H16.8z" fill="#f07c2c"/>
+    <path d="M51 18.5l-18 1c.2 3.2 2.4 5 5.4 5L51 23.5z" fill="#f07c2c"/>
+    <ellipse cx="31.6" cy="22.6" rx="2.3" ry="3.2" transform="rotate(-20 31.6 22.6)" fill="#fff"/>
+    <ellipse cx="45.2" cy="26.8" rx="4" ry="2.4" fill="#fff"/>
+  </g>
+  <circle cx="42.2" cy="16.4" r="1.9" fill="#1b1f27"/>
+  <circle cx="42.8" cy="15.8" r=".55" fill="#fff"/>
+  <path d="M48.4 15.8L63 20.6l-14.6 3z" fill="#1b1f27"/>
+</svg>

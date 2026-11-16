@@ -1,1 +1,193 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+
+/* `.dark` on <html> (shadcn's convention); public/theme.js sets it before the first paint. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * The app's colours as before Phase 1.5: emerald for actions and the active tab, stone for surfaces and text,
+ * amber for warnings ("No position"). Choosing new ones is left for later; the logo keeps its own colours.
+ * shadcn's variable names are kept so components added later work unchanged; `warning` and `success` are ours.
+ * Components use these names (`bg-card`, `text-muted-foreground`), never raw palette colours, so the dark
+ * theme needs no `dark:` classes.
+ */
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-sans);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-success: var(--success);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  --radius: 0.625rem;
+
+  --background: oklch(0.985 0.001 106.423); /* stone-50 */
+  --foreground: oklch(0.216 0.006 56.043); /* stone-900 */
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.216 0.006 56.043);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.216 0.006 56.043);
+  --primary: oklch(0.508 0.118 165.612); /* emerald-700 */
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.97 0.001 106.424); /* stone-100 */
+  --secondary-foreground: oklch(0.268 0.007 34.298); /* stone-800 */
+  --muted: oklch(0.97 0.001 106.424);
+  --muted-foreground: oklch(0.553 0.013 58.071); /* stone-500 */
+  --accent: oklch(0.95 0.052 163.051); /* emerald-100, the old nav hover */
+  --accent-foreground: oklch(0.432 0.095 166.913); /* emerald-800 */
+  --destructive: oklch(0.505 0.213 27.518); /* red-700 */
+  --warning: oklch(0.555 0.163 48.998); /* amber-700 */
+  --warning-foreground: oklch(1 0 0);
+  --success: oklch(0.508 0.118 165.612);
+  --border: oklch(0.923 0.003 48.717); /* stone-200 */
+  --input: oklch(0.869 0.005 56.366); /* stone-300 */
+  --ring: oklch(0.696 0.17 162.48); /* emerald-500 */
+
+  --chart-1: oklch(0.508 0.118 165.612);
+  --chart-2: oklch(0.555 0.163 48.998);
+  --chart-3: oklch(0.696 0.17 162.48);
+  --chart-4: oklch(0.444 0.011 73.639);
+  --chart-5: oklch(0.828 0.189 84.429);
+
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.216 0.006 56.043);
+  --sidebar-primary: oklch(0.508 0.118 165.612);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.95 0.052 163.051);
+  --sidebar-accent-foreground: oklch(0.432 0.095 166.913);
+  --sidebar-border: oklch(0.923 0.003 48.717);
+  --sidebar-ring: oklch(0.696 0.17 162.48);
+}
+
+/* The same hues for a dark background: stone-950/900 surfaces, lighter emerald so it reads on them. */
+.dark {
+  --background: oklch(0.147 0.004 49.25); /* stone-950 */
+  --foreground: oklch(0.97 0.001 106.424); /* stone-100 */
+  --card: oklch(0.216 0.006 56.043); /* stone-900 */
+  --card-foreground: oklch(0.97 0.001 106.424);
+  --popover: oklch(0.216 0.006 56.043);
+  --popover-foreground: oklch(0.97 0.001 106.424);
+  --primary: oklch(0.765 0.177 163.223); /* emerald-400 */
+  --primary-foreground: oklch(0.262 0.051 172.552); /* emerald-950 */
+  --secondary: oklch(0.268 0.007 34.298); /* stone-800 */
+  --secondary-foreground: oklch(0.97 0.001 106.424);
+  --muted: oklch(0.268 0.007 34.298);
+  --muted-foreground: oklch(0.709 0.01 56.259); /* stone-400 */
+  --accent: oklch(0.262 0.051 172.552); /* emerald-950 */
+  --accent-foreground: oklch(0.905 0.093 164.15); /* emerald-200 */
+  --destructive: oklch(0.704 0.191 22.216); /* red-400 */
+  --warning: oklch(0.828 0.189 84.429); /* amber-400 */
+  --warning-foreground: oklch(0.279 0.077 45.635); /* amber-950 */
+  --success: oklch(0.765 0.177 163.223);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.596 0.145 163.225); /* emerald-600 */
+
+  --chart-1: oklch(0.765 0.177 163.223);
+  --chart-2: oklch(0.828 0.189 84.429);
+  --chart-3: oklch(0.696 0.17 162.48);
+  --chart-4: oklch(0.709 0.01 56.259);
+  --chart-5: oklch(0.769 0.188 70.08);
+
+  --sidebar: oklch(0.216 0.006 56.043);
+  --sidebar-foreground: oklch(0.97 0.001 106.424);
+  --sidebar-primary: oklch(0.765 0.177 163.223);
+  --sidebar-primary-foreground: oklch(0.262 0.051 172.552);
+  --sidebar-accent: oklch(0.262 0.051 172.552);
+  --sidebar-accent-foreground: oklch(0.905 0.093 164.15);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.596 0.145 163.225);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+/*
+ * Leaflet's controls in the theme's colours. The tiles stay as OpenStreetMap draws them (D9); only the zoom buttons
+ * and the attribution follow light and dark. One class more specific than leaflet.css, which loads after this file.
+ */
+.leaflet-container {
+  font-family: inherit;
+  background: var(--muted);
+}
+.leaflet-container .leaflet-bar {
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+}
+.leaflet-container .leaflet-bar a {
+  background: var(--card);
+  color: var(--card-foreground);
+  border-bottom-color: var(--border);
+}
+.leaflet-container .leaflet-bar a:hover,
+.leaflet-container .leaflet-bar a:focus-visible {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.leaflet-container .leaflet-bar a.leaflet-disabled {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.leaflet-container .leaflet-control-attribution {
+  background: color-mix(in oklch, var(--background) 85%, transparent);
+  color: var(--muted-foreground);
+}
+.leaflet-container .leaflet-control-attribution a {
+  color: var(--primary);
+}
