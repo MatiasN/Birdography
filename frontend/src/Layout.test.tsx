@@ -1,30 +1,57 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import Layout from "./Layout";
 import { me, mockApi, type Routes } from "./test/api";
 
-function renderLayout() {
+function renderLayout(entry = "/") {
   const router = createMemoryRouter(
     [
       { path: "/login", element: <p>Login page</p> },
-      { element: <Layout />, children: [{ path: "/", element: <p>Photos page</p> }] },
+      {
+        element: <Layout />,
+        children: [
+          { path: "/", element: <p>Photos page</p> },
+          { path: "/map", element: <p>Map page</p> },
+          { path: "/profile", element: <p>Profile page</p> },
+        ],
+      },
     ],
-    { initialEntries: ["/"] },
+    { initialEntries: [entry] },
   );
   render(<RouterProvider router={router} />);
   return router;
 }
 
 describe("Layout", () => {
-  it("shows the page and who is logged in", async () => {
+  it("shows the page, with the five tabs in the sidebar and in the bottom bar", async () => {
     mockApi({ "GET /auth/me": { body: me() } });
-    renderLayout();
-    expect(await screen.findByText("me@example.com")).toBeInTheDocument();
-    expect(screen.getByText("Photos page")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Photos" })).toHaveClass("bg-emerald-700");
-    expect(screen.getByRole("link", { name: "Map" })).not.toHaveClass("bg-emerald-700");
+    renderLayout("/map");
+    expect(await screen.findByText("Map page")).toBeInTheDocument();
+    const tabs = ["Catalogue", "Species", "Upload", "Map", "Near me"];
+    for (const nav of [
+      screen.getByRole("navigation", { name: "Main" }),
+      screen.getByRole("navigation", { name: "Tabs" }),
+    ]) {
+      expect(
+        within(nav)
+          .getAllByRole("link")
+          .map((link) => link.textContent),
+      ).toEqual(expect.arrayContaining(tabs));
+      expect(within(nav).getByRole("link", { name: "Map" })).toHaveAttribute("aria-current", "page");
+      expect(within(nav).getByRole("link", { name: "Catalogue" })).not.toHaveAttribute("aria-current");
+      expect(within(nav).getByRole("link", { name: "Near me" })).toHaveAttribute("href", "/near-me");
+    }
+    expect(
+      within(screen.getByRole("navigation", { name: "Main" })).getByRole("link", { name: "Birdography" }),
+    ).toHaveAttribute("href", "/catalogue");
+  });
+
+  it("titles the phone top bar after the page", async () => {
+    mockApi({ "GET /auth/me": { body: me() } });
+    renderLayout("/map");
+    expect(await screen.findByRole("banner")).toHaveTextContent("Map");
   });
 
   it("sends anonymous visitors to the login page, rendering nothing meanwhile", async () => {
@@ -63,19 +90,29 @@ describe("Layout", () => {
     expect(await screen.findByText("Login page")).toBeInTheDocument();
   });
 
-  it("links the email to the account page", async () => {
+  it("opens the account menu from the sidebar and the top bar, leading to the profile page", async () => {
     mockApi({ "GET /auth/me": { body: me() } });
-    renderLayout();
-    expect(await screen.findByRole("link", { name: "me@example.com" })).toHaveAttribute("href", "/account");
+    const router = renderLayout();
+    const triggers = await screen.findAllByRole("button", { name: "Account: me@example.com" });
+    expect(triggers).toHaveLength(2); // the sidebar's and the phone top bar's
+    await userEvent.click(triggers[0]);
+    expect(screen.getByRole("menu")).toHaveTextContent("me@example.com");
+    await userEvent.click(screen.getByRole("menuitem", { name: "Profile" }));
+    expect(await screen.findByText("Profile page")).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe("/profile");
+
+    await userEvent.click(triggers[1]);
+    expect(screen.getByRole("menuitem", { name: "Log out" })).toBeInTheDocument();
   });
 
-  it("logs out", async () => {
+  it("logs out from the account menu", async () => {
     const calls = mockApi({
       "GET /auth/me": { body: me() },
       "POST /auth/logout": { status: 204 },
     });
     const router = renderLayout();
-    await userEvent.click(await screen.findByRole("button", { name: "Log out" }));
+    await userEvent.click((await screen.findAllByRole("button", { name: "Account: me@example.com" }))[0]);
+    await userEvent.click(screen.getByRole("menuitem", { name: "Log out" }));
     expect(await screen.findByText("Login page")).toBeInTheDocument();
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["GET /auth/me", "POST /auth/logout"]);
     expect(router.state.location.pathname).toBe("/login");

@@ -20,8 +20,8 @@ function renderLogin(entry = "/login") {
 
 async function submit(email = "me@example.com", password = "a long password") {
   const user = userEvent.setup();
-  await user.type(screen.getByPlaceholderText("Email"), email);
-  await user.type(screen.getByPlaceholderText("Password"), password);
+  await user.type(screen.getByLabelText("Email"), email);
+  await user.type(screen.getByLabelText("Password"), password);
   await user.click(screen.getByRole("button", { name: "Log in" }));
 }
 
@@ -72,5 +72,17 @@ describe("after a session expired", () => {
     renderLogin(`/login?next=${encodeURIComponent(next)}`);
     await submit();
     expect(await screen.findByText("Home")).toBeInTheDocument();
+  });
+
+  it("shows and hides the password with the eye button", async () => {
+    renderLogin();
+    const field = screen.getByLabelText("Password");
+    await userEvent.type(field, "secret words");
+    expect(field).toHaveAttribute("type", "password");
+    await userEvent.click(screen.getByRole("button", { name: "Show password" }));
+    expect(field).toHaveAttribute("type", "text");
+    expect(field).toHaveValue("secret words");
+    await userEvent.click(screen.getByRole("button", { name: "Hide password" }));
+    expect(field).toHaveAttribute("type", "password");
   });
 });

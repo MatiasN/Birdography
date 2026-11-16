@@ -1,12 +1,92 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate, useOutletContext } from "react-router-dom";
+import AccountMenu from "@/components/AccountMenu";
+import { cn } from "cn";
 import { api, send, SESSION_EXPIRED, type User } from "./api";
-
-const link = ({ isActive }: { isActive: boolean }) =>
-  `px-3 py-1 rounded ${isActive ? "bg-emerald-700 text-white" : "hover:bg-emerald-100"}`;
+import { pageTitle, TABS } from "./nav";
 
 /** setTimeout saturates at 2^31-1 ms (~25 days); longer waits just re-check when the timer fires. */
 const MAX_DELAY_MS = 2 ** 31 - 1;
+
+/** What pages inside the layout get from it, through the router's outlet context. */
+export type LayoutContext = { user: User; logout: () => Promise<void> };
+export const useLayout = () => useOutletContext<LayoutContext>();
+
+function Logo({ className }: { className?: string }) {
+  return <img src="/logo.svg" alt="" className={className} />;
+}
+
+/** Wide screens (768 px and up): an icon rail, with labels beside the icons from 1280 px. */
+function Sidebar({ email, onLogout }: { email: string; onLogout: () => void }) {
+  return (
+    <nav
+      aria-label="Main"
+      className="sticky top-0 hidden h-dvh w-20 shrink-0 flex-col border-r border-sidebar-border bg-sidebar p-3 text-sidebar-foreground md:flex xl:w-60"
+    >
+      <Link to="/catalogue" className="mb-6 flex items-center justify-center gap-2 xl:justify-start xl:px-2">
+        <Logo className="size-9" />
+        <span className="sr-only text-lg font-semibold tracking-tight xl:not-sr-only">Birdography</span>
+      </Link>
+      <div className="flex flex-col gap-1">
+        {TABS.map(({ to, label, Icon }) => (
+          <NavLink
+            key={to}
+            to={to}
+            className={({ isActive }) =>
+              cn(
+                "flex flex-col items-center gap-1 rounded-lg px-1 py-2 text-[11px] font-medium whitespace-nowrap outline-none focus-visible:ring-3 focus-visible:ring-ring/50 xl:flex-row xl:gap-3 xl:px-3 xl:text-sm",
+                isActive
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+              )
+            }
+          >
+            <Icon className="size-5" aria-hidden="true" />
+            {label}
+          </NavLink>
+        ))}
+      </div>
+      <div className="mt-auto">
+        <AccountMenu email={email} onLogout={onLogout} place="sidebar" />
+      </div>
+    </nav>
+  );
+}
+
+/** Narrow screens: a bar with the page title and the account menu on top, the five tabs at the bottom. */
+function PhoneBars({ email, onLogout, title }: { email: string; onLogout: () => void; title: string }) {
+  return (
+    <>
+      <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur md:hidden">
+        <Logo className="size-7" />
+        <p className="flex-1 text-lg font-semibold">{title}</p>
+        <AccountMenu email={email} onLogout={onLogout} place="topbar" />
+      </header>
+      <nav
+        aria-label="Tabs"
+        className="fixed inset-x-0 bottom-0 z-20 flex border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden"
+      >
+        {TABS.map(({ to, label, Icon }) => (
+          <NavLink
+            key={to}
+            to={to}
+            className={({ isActive }) =>
+              cn(
+                "group flex h-16 flex-1 flex-col items-center gap-1 pt-2 text-[11px] font-medium outline-none focus-visible:bg-accent",
+                isActive ? "text-primary" : "text-muted-foreground",
+              )
+            }
+          >
+            <span className="grid h-7 w-14 place-items-center rounded-full group-aria-[current=page]:bg-accent">
+              <Icon className="size-5" aria-hidden="true" />
+            </span>
+            {label}
+          </NavLink>
+        ))}
+      </nav>
+    </>
+  );
+}
 
 export default function Layout() {
   const navigate = useNavigate();
@@ -37,33 +117,24 @@ export default function Layout() {
     return () => clearTimeout(timer);
   }, [user]);
 
-  async function logout() {
+  const logout = useCallback(async () => {
     await send("/auth/logout", { method: "POST" });
     await navigate("/login");
-  }
+  }, [navigate]);
 
   if (!user) return null;
 
+  const onLogout = () => void logout();
   return (
-    <div className="min-h-screen flex flex-col bg-stone-50 text-stone-900">
-      <header className="flex items-center gap-2 px-4 py-2 border-b bg-white">
-        <span className="font-semibold mr-4">Birdography</span>
-        <NavLink to="/" end className={link}>
-          Photos
-        </NavLink>
-        <NavLink to="/map" className={link}>
-          Map
-        </NavLink>
-        <Link to="/account" className="ml-auto text-sm text-stone-500 hover:text-stone-800 hidden sm:inline">
-          {user.email}
-        </Link>
-        <button onClick={() => void logout()} className="text-sm px-3 py-1 rounded hover:bg-stone-100">
-          Log out
-        </button>
-      </header>
-      <main className="flex-1 flex flex-col">
-        <Outlet />
-      </main>
+    <div className="flex min-h-dvh bg-background text-foreground">
+      <Sidebar email={user.email} onLogout={onLogout} />
+      {/* pb-16 keeps the end of the page above the phone's bottom tab bar. */}
+      <div className="flex min-w-0 flex-1 flex-col pb-16 md:pb-0">
+        <PhoneBars email={user.email} onLogout={onLogout} title={pageTitle(location.pathname)} />
+        <main className="flex flex-1 flex-col">
+          <Outlet context={{ user, logout } satisfies LayoutContext} />
+        </main>
+      </div>
     </div>
   );
 }

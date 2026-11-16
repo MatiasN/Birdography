@@ -1,18 +1,25 @@
-import type { RouteObject } from "react-router-dom";
+import { Navigate, type RouteObject } from "react-router-dom";
 import Layout from "./Layout";
-import Account from "./pages/Account";
 import Login from "./pages/Login";
-import MapPage from "./pages/MapPage";
 import Photos from "./pages/Photos";
+import { NearMe, Species, Upload } from "./pages/Placeholders";
+import Profile from "./pages/Profile";
 
 export const routes: RouteObject[] = [
   { path: "/login", element: <Login /> },
   {
     element: <Layout />,
     children: [
-      { path: "/", element: <Photos /> },
-      { path: "/map", element: <MapPage /> },
-      { path: "/account", element: <Account /> },
+      // The old addresses still work: bookmarks, and `next=` links from before the tabs.
+      { path: "/", element: <Navigate to="/catalogue" replace /> },
+      { path: "/account", element: <Navigate to="/profile" replace /> },
+      { path: "/catalogue", element: <Photos /> },
+      { path: "/species", element: <Species /> },
+      { path: "/upload", element: <Upload /> },
+      // Loaded when the Map tab is first opened: Leaflet, supercluster and the clustering aren't needed elsewhere.
+      { path: "/map", lazy: async () => ({ Component: (await import("./pages/MapPage")).default }) },
+      { path: "/near-me", element: <NearMe /> },
+      { path: "/profile", element: <Profile /> },
     ],
   },
 ];
