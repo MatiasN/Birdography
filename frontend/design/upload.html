@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Mockup: Upload</title>
+    <script type="module">
+      import { icon, page, photo, SPECIES, ui } from "./shell.js";
+
+      // The Part 2 Upload tab (plan 0007 §1): drop zone or phone picker, species for the batch or one photo,
+      // progress per file.
+      const speciesChip = (s, small = false) =>
+        `<span class="inline-flex items-center gap-1 rounded-md bg-accent ${small ? "px-1.5 py-0.5 text-xs" : "px-2 py-1 text-sm"} font-medium text-accent-foreground">${s[0]}${icon("x", small ? "size-3" : "size-3.5")}</span>`;
+
+      const FILES = [
+        ["DSC_4821.NEF", "52.3 MB", "done", [0]],
+        ["DSC_4822.NEF", "51.9 MB", "done", [0, 1]],
+        ["DSC_4823.NEF", "52.8 MB", "uploading", [0], 64],
+        ["DSC_4824.JPG", "11.2 MB", "waiting", [0]],
+        ["DSC_4790.NEF", "50.1 MB", "error", [0]],
+        ["IMG_0412.HEIC", "3.4 MB", "waiting", [0]],
+      ];
+
+      const status = ([, , state, , pct]) =>
+        ({
+          done: `<span class="inline-flex items-center gap-1 text-sm text-success">${icon("check", "size-4")}Done</span>`,
+          uploading: `<span class="text-sm tabular-nums text-muted-foreground">${pct}%</span>`,
+          waiting: `<span class="text-sm text-muted-foreground">Waiting</span>`,
+          error: `<span class="inline-flex items-center gap-1 text-sm text-destructive">${icon("circleAlert", "size-4")}Already in your catalogue</span>`,
+        })[state];
+
+      const file = (f, i) => {
+        const [name, size, state, species, pct] = f;
+        return `<li class="flex items-center gap-3 px-4 py-3">
+          <span class="size-12 shrink-0 rounded-md" style="background:${photo(i + 20)}"></span>
+          <div class="min-w-0 flex-1 space-y-1.5">
+            <div class="flex items-baseline gap-2"><span class="truncate text-sm font-medium">${name}</span>
+              <span class="text-xs text-muted-foreground">${size}</span></div>
+            ${state === "uploading" ? `<div class="h-1.5 overflow-hidden rounded-full bg-muted"><div class="h-full rounded-full bg-primary" style="width:${pct}%"></div></div>` : ""}
+            ${
+              state === "error"
+                ? ""
+                : `<div class="flex flex-wrap items-center gap-1">${species.map((s) => speciesChip(SPECIES[s], true)).join("")}
+              <button class="rounded-md px-1.5 py-0.5 text-xs font-medium text-primary">+ Species</button></div>`
+            }
+          </div>
+          <div class="shrink-0 text-right">${status(f)}</div></li>`;
+      };
+
+      page(() => {
+        document.querySelector("main").innerHTML = `
+          <div class="mx-auto max-w-3xl space-y-6">
+            <div class="hidden items-baseline gap-3 md:flex">
+              <h1 class="text-2xl font-semibold tracking-tight">Upload</h1>
+              <span class="text-sm text-muted-foreground">2 of 6 uploaded</span>
+              <a class="${ui.ghost} ml-auto text-primary">View in catalogue</a>
+            </div>
+
+            <div class="flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-input bg-card px-6 py-8 text-center md:py-12">
+              <span class="grid size-12 place-items-center rounded-full bg-accent text-accent-foreground">${icon("imageUp", "size-6")}</span>
+              <p class="hidden font-medium md:block">Drop photos here</p>
+              <button class="${ui.button} md:hidden h-11 px-6">Choose photos</button>
+              <button class="${ui.outline} hidden md:inline-flex">Browse files</button>
+              <p class="text-xs text-muted-foreground">JPEG, PNG, TIFF, HEIC, WebP and RAW · up to 40 MB, 70 MB for RAW</p>
+            </div>
+
+            <section class="space-y-2">
+              <label class="${ui.label}" for="batch">Species for every photo in this batch</label>
+              <div class="relative">
+                <div class="flex min-h-9 flex-wrap items-center gap-1.5 rounded-md border border-ring bg-card px-2 py-1.5 shadow-xs ring-3 ring-ring/30">
+                  ${speciesChip(SPECIES[0])}<input id="batch" class="min-w-24 flex-1 bg-transparent px-1 text-sm outline-none" value="garç">
+                </div>
+                <div class="absolute inset-x-0 top-full z-10 mt-1 overflow-hidden rounded-md border bg-popover p-1 text-sm shadow-md">
+                  <div class="rounded-sm bg-accent px-2 py-1.5"><span class="font-medium">Grey heron</span>
+                    <span class="block text-xs text-muted-foreground"><b class="font-semibold text-foreground">Garç</b>a-real · <i>Ardea cinerea</i></span></div>
+                  <div class="px-2 py-1.5"><span class="font-medium">Little egret</span>
+                    <span class="block text-xs text-muted-foreground"><b class="font-semibold text-foreground">Garç</b>a-branca-pequena · <i>Egretta garzetta</i></span></div>
+                  <div class="mt-1 flex items-center gap-2 border-t px-2 pb-1 pt-2 text-primary">${icon("plus", "size-4")}Add “garç” as a new species</div>
+                </div>
+              </div>
+              <p class="text-xs text-muted-foreground">Search in English, Portuguese or Latin. Change one photo's species in the list below.</p>
+            </section>
+
+            <ul class="${ui.card} mt-32 divide-y">${FILES.map(file).join("")}</ul>
+          </div>`;
+      });
+    </script>
+  </head>
+  <body data-tab="upload" data-title="Upload">
+    <main class="flex-1 p-4 md:p-6 xl:p-8"></main>
+  </body>
+</html>

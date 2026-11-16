@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Mockup: Profile</title>
+    <script type="module">
+      import { avatar, icon, page, ui } from "./shell.js";
+
+      const field = (label, auto) => `<label class="block space-y-1.5"><span class="${ui.label}">${label}</span>
+        <input type="password" autocomplete="${auto}" class="${ui.input}"></label>`;
+      const section = (title, body, text = "") => `<section class="${ui.card} p-5 space-y-4">
+        <div><h2 class="font-semibold">${title}</h2>${text && `<p class="text-sm text-muted-foreground">${text}</p>`}</div>${body}</section>`;
+      const theme = (name, label, on) =>
+        `<span class="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md text-sm font-medium ${
+          on ? "bg-background shadow-xs" : "text-muted-foreground"
+        }">${icon(name, "size-4")}${label}</span>`;
+
+      page(() => {
+        document.querySelector("main").innerHTML = `
+          <div class="mx-auto max-w-2xl space-y-6">
+            <div class="flex items-center gap-4">${avatar("size-16 text-2xl")}
+              <div><h1 class="text-xl font-semibold tracking-tight">matias@example.org</h1>
+                <p class="text-sm text-muted-foreground">Signed in on this device until 16 Dec 2026</p></div></div>
+            ${section(
+              "Appearance",
+              `<div class="flex rounded-lg bg-muted p-1">${theme("monitor", "System", true)}${theme("sun", "Light")}${theme("moon", "Dark")}</div>`,
+              "System follows your device's light or dark setting.",
+            )}
+            ${section(
+              "Password",
+              `${field("Current password", "current-password")}${field("New password", "new-password")}${field("Repeat new password", "new-password")}
+              <div class="flex items-center gap-3"><button class="${ui.button}">Change password</button></div>`,
+              "At least 10 characters. Your other devices will be logged out.",
+            )}
+            ${section("Session", `<button class="${ui.outline}">${icon("logOut", "size-4")}Log out</button>`)}
+          </div>`;
+      });
+    </script>
+  </head>
+  <body data-tab="profile" data-title="Profile">
+    <main class="flex-1 p-4 md:p-6 xl:p-8"></main>
+  </body>
+</html>
