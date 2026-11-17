@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pageTitle } from "./nav";
+import { pageTitle } from "@/nav";
 
 describe("pageTitle", () => {
   it.each([

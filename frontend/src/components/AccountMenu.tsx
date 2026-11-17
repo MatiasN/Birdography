@@ -9,6 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { initial } from "@/lib/initial";
 import { cn } from "cn";
 
 type Props = {
@@ -17,8 +18,6 @@ type Props = {
   /** Sidebar: avatar, and from 1280 px the email. Top bar: the avatar alone. */
   place: "sidebar" | "topbar";
 };
-
-export const initial = (email: string) => email.charAt(0).toUpperCase();
 
 /** The account menu: Profile and Log out, opened from the avatar (plan 0007 §5). */
 export default function AccountMenu({ email, onLogout, place }: Props) {

@@ -8,6 +8,21 @@ export type PhotoFile = {
   height: number | null;
 };
 
+/** A species as photos carry it; `/species` returns these fields and a few more (family, eBird code). */
+export type Species = {
+  id: number;
+  scientific_name: string;
+  name_en: string | null;
+  name_pt: string | null;
+};
+
+/** The name shown for a species: English, else Portuguese, else the scientific name. */
+export const speciesName = (species: Species) => species.name_en ?? species.name_pt ?? species.scientific_name;
+
+/** The other names, for a second line: "Garça-real · Ardea cinerea". */
+export const speciesOtherNames = (species: Species) =>
+  [species.name_en && species.name_pt, species.scientific_name].filter(Boolean).join(" · ");
+
 export type Photo = {
   id: number;
   uploaded_at: string;
@@ -16,6 +31,8 @@ export type Photo = {
   taken_offset_minutes: number | null;
   taken_at_manual: boolean;
   camera: string | null;
+  camera_make: string | null;
+  camera_model: string | null;
   lens: string | null;
   iso: number | null;
   shutter_seconds: number | null;
@@ -25,9 +42,19 @@ export type Photo = {
   lon: number | null;
   point_manual: boolean;
   species_ids: number[];
+  species: Species[];
   location_id: number | null;
   files: PhotoFile[];
 };
+
+/** The photo detail's title: its first species, or a plain one while it has none. */
+export const photoTitle = (photo: Photo) => (photo.species[0] ? speciesName(photo.species[0]) : "Photo details");
+
+/** One of the user's cameras, from /photos/cameras. */
+export type Camera = { make: string | null; model: string | null; photos: number };
+
+/** How many photos a filter matches and how many species they show, from /photos/summary. */
+export type Summary = { photos: number; species: number };
 
 export type User = { id: number; email: string; expires_at: string };
 
@@ -48,6 +75,14 @@ export const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "tif", "tiff", "webp", "h
 /** After the last dot; a name without one is its own "extension", which matches nothing. */
 const extension = (file: File) => file.name.slice(file.name.lastIndexOf(".") + 1).toLowerCase();
 
+export const isRaw = (file: File) => RAW_EXTENSIONS.includes(extension(file));
+export const isJpeg = (file: File) => ["jpg", "jpeg"].includes(extension(file));
+/** The name without its extension, lower-cased: what the two files of a RAW+JPEG pair share ("DSC_0001"). */
+export function stem(file: File): string {
+  const dot = file.name.lastIndexOf(".");
+  return (dot > 0 ? file.name.slice(0, dot) : file.name).toLowerCase();
+}
+
 /** Client-side check against the server's limits, so a hopeless upload fails before it starts. */
 export function sizeProblem(file: File, limits: Health["limits"]): string | null {
   const raw = RAW_EXTENSIONS.includes(extension(file));
@@ -66,10 +101,13 @@ export const hasFile = (photo: Photo, kind: PhotoFile["kind"]) => photo.files.so
 
 export class ApiError extends Error {
   status: number;
+  /** The whole error body, for the extra fields some answers carry (a 409's `species_id` or `photo_id`). */
+  body: Record<string, unknown>;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, body: Record<string, unknown> = {}) {
     super(message);
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -89,8 +127,8 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
     if (response.status === 401 && !HANDLE_OWN_401.includes(path)) {
       window.dispatchEvent(new Event(SESSION_EXPIRED));
     }
-    const body: { detail?: unknown } = await response.json().catch(() => ({}));
-    throw new ApiError(response.status, errorMessage(body.detail) ?? response.statusText);
+    const body: Record<string, unknown> = await response.json().catch(() => ({}));
+    throw new ApiError(response.status, errorMessage(body.detail) ?? response.statusText, body);
   }
   return response;
 }
@@ -101,6 +139,51 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const data: T = await response.json(); // the API's response models are the contract for T
   return data;
 }
+
+/**
+ * Upload one photo with its species (plan 0008 §7), and the camera JPEG of a RAW+JPEG pair as `companion` (D12).
+ * `fetch` can't report upload progress, so this uses XMLHttpRequest; `onProgress` gets the share sent, 0 to 1.
+ * Errors are `ApiError`s as with `api()`, a 401 ends the session the same way, and a failed connection rejects
+ * with a TypeError, as fetch does.
+ */
+export function uploadFile(
+  file: File,
+  companion: File | null,
+  speciesIds: number[],
+  onProgress: (share: number) => void,
+): Promise<Photo> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/photos");
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total);
+    });
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(JSON.parse(xhr.responseText)); // the API's response model is the contract, as in api()
+        return;
+      }
+      let body: Record<string, unknown> = {};
+      try {
+        body = JSON.parse(xhr.responseText);
+      } catch {
+        // not JSON: a proxy's error page; the status still says what happened
+      }
+      if (xhr.status === 401) window.dispatchEvent(new Event(SESSION_EXPIRED));
+      reject(new ApiError(xhr.status, errorMessage(body.detail) ?? (xhr.statusText || "Upload failed"), body));
+    });
+    xhr.addEventListener("error", () => reject(new TypeError("Network error")));
+    const form = new FormData();
+    form.append("file", file);
+    if (companion) form.append("companion", companion);
+    for (const id of speciesIds) form.append("species_ids", String(id));
+    xhr.send(form);
+  });
+}
+
+/** 52.3 MB, 840 KB. */
+export const fileSize = (bytes: number) =>
+  bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
 /** A request without a response body (204). */
 export async function send(path: string, init?: RequestInit): Promise<void> {

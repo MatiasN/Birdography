@@ -1,6 +1,6 @@
 import { LogOutIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { initial } from "@/components/AccountMenu";
+import { initial } from "@/lib/initial";
 import ThemePicker from "@/components/ThemePicker";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useLayout } from "@/Layout";
-import { ApiError, json, send } from "../api";
+import { useLayout } from "@/hooks/useLayout";
+import { ApiError, json, send } from "@/api";
 
 const dateText = (iso: string) =>
   new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });

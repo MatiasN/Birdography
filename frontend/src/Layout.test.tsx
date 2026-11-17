@@ -2,8 +2,8 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
-import Layout from "./Layout";
-import { me, mockApi, type Routes } from "./test/api";
+import Layout from "@/Layout";
+import { me, mockApi, type Routes } from "@/test/api";
 
 function renderLayout(entry = "/") {
   const router = createMemoryRouter(

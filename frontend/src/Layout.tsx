@@ -1,19 +1,39 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, NavLink, Outlet, useLocation, useNavigate, useOutletContext } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import AccountMenu from "@/components/AccountMenu";
+import UploadsProvider from "@/components/UploadsProvider";
+import { inProgress, useUploads } from "@/hooks/useUploads";
+import type { LayoutContext } from "@/hooks/useLayout";
 import { cn } from "cn";
-import { api, send, SESSION_EXPIRED, type User } from "./api";
-import { pageTitle, TABS } from "./nav";
+import { api, send, SESSION_EXPIRED, type User } from "@/api";
+import { pageTitle, TABS } from "@/nav";
 
 /** setTimeout saturates at 2^31-1 ms (~25 days); longer waits just re-check when the timer fires. */
 const MAX_DELAY_MS = 2 ** 31 - 1;
 
 /** What pages inside the layout get from it, through the router's outlet context. */
-export type LayoutContext = { user: User; logout: () => Promise<void> };
-export const useLayout = () => useOutletContext<LayoutContext>();
 
 function Logo({ className }: { className?: string }) {
   return <img src="/logo.svg" alt="" className={className} />;
+}
+
+/**
+ * How many files are still waiting or being sent, so it shows from any tab: a number on the Upload tab's icon, and
+ * for screen readers after the tab's name ("Upload, 3 in progress").
+ */
+function UploadBadge({ to, spoken = false }: { to: string; spoken?: boolean }) {
+  const { items } = useUploads();
+  const count = items.filter(inProgress).length;
+  if (to !== "/upload" || count === 0) return null;
+  if (spoken) return <span className="sr-only">, {count} in progress</span>;
+  return (
+    <span
+      aria-hidden="true"
+      className="absolute -top-1.5 -right-2 grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] leading-none font-semibold text-primary-foreground tabular-nums"
+    >
+      {count}
+    </span>
+  );
 }
 
 /** Wide screens (768 px and up): an icon rail, with labels beside the icons from 1280 px. */
@@ -41,8 +61,12 @@ function Sidebar({ email, onLogout }: { email: string; onLogout: () => void }) {
               )
             }
           >
-            <Icon className="size-5" aria-hidden="true" />
+            <span className="relative">
+              <Icon className="size-5" aria-hidden="true" />
+              <UploadBadge to={to} />
+            </span>
             {label}
+            <UploadBadge to={to} spoken />
           </NavLink>
         ))}
       </div>
@@ -64,7 +88,7 @@ function PhoneBars({ email, onLogout, title }: { email: string; onLogout: () => 
       </header>
       <nav
         aria-label="Tabs"
-        className="fixed inset-x-0 bottom-0 z-20 flex border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden"
+        className="fixed inset-x-0 bottom-0 z-20 flex h-(--tab-bar-height) border-t bg-background pb-[env(safe-area-inset-bottom)] md:hidden"
       >
         {TABS.map(({ to, label, Icon }) => (
           <NavLink
@@ -78,9 +102,13 @@ function PhoneBars({ email, onLogout, title }: { email: string; onLogout: () => 
             }
           >
             <span className="grid h-7 w-14 place-items-center rounded-full group-aria-[current=page]:bg-accent">
-              <Icon className="size-5" aria-hidden="true" />
+              <span className="relative">
+                <Icon className="size-5" aria-hidden="true" />
+                <UploadBadge to={to} />
+              </span>
             </span>
             {label}
+            <UploadBadge to={to} spoken />
           </NavLink>
         ))}
       </nav>
@@ -126,15 +154,17 @@ export default function Layout() {
 
   const onLogout = () => void logout();
   return (
-    <div className="flex min-h-dvh bg-background text-foreground">
-      <Sidebar email={user.email} onLogout={onLogout} />
-      {/* pb-16 keeps the end of the page above the phone's bottom tab bar. */}
-      <div className="flex min-w-0 flex-1 flex-col pb-16 md:pb-0">
-        <PhoneBars email={user.email} onLogout={onLogout} title={pageTitle(location.pathname)} />
-        <main className="flex flex-1 flex-col">
-          <Outlet context={{ user, logout } satisfies LayoutContext} />
-        </main>
+    <UploadsProvider>
+      <div className="flex min-h-dvh bg-background text-foreground">
+        <Sidebar email={user.email} onLogout={onLogout} />
+        {/* Keeps the end of the page above the phone's bottom tab bar, home indicator included. */}
+        <div className="flex min-w-0 flex-1 flex-col pb-(--tab-bar-height) md:pb-0">
+          <PhoneBars email={user.email} onLogout={onLogout} title={pageTitle(location.pathname)} />
+          <main className="flex flex-1 flex-col">
+            <Outlet context={{ user, logout } satisfies LayoutContext} />
+          </main>
+        </div>
       </div>
-    </div>
+    </UploadsProvider>
   );
 }

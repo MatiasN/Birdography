@@ -1,9 +1,9 @@
 import { ArrowLeftIcon } from "lucide-react";
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import SidePanel from "@/components/SidePanel";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { useMediaQuery, WIDE } from "@/useMediaQuery";
+import { useMediaQuery, WIDE } from "@/hooks/useMediaQuery";
 
 type Props = {
   title: string;
@@ -19,6 +19,8 @@ type Props = {
  */
 export default function ResponsivePanel({ title, onClose, actions, children }: Props) {
   const wide = useMediaQuery(WIDE);
+  // The sheet has no Radix trigger, so Radix can't return focus on close by itself: remember what opened it.
+  const opener = useRef(document.activeElement);
 
   if (wide) {
     return (
@@ -34,6 +36,10 @@ export default function ResponsivePanel({ title, onClose, actions, children }: P
         side="bottom"
         showCloseButton={false}
         aria-describedby={undefined}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          if (opener.current instanceof HTMLElement) opener.current.focus();
+        }}
         className="top-0 gap-0 bg-background p-0 motion-reduce:animate-none data-[side=bottom]:h-dvh data-[side=bottom]:border-t-0"
       >
         <div className="flex h-14 shrink-0 items-center gap-2 border-b px-2">

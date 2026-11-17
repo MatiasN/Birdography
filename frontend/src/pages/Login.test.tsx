@@ -2,15 +2,15 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
-import { mockApi } from "../test/api";
-import Login from "./Login";
+import { mockApi } from "@/test/api";
+import Login from "@/pages/Login";
 
 function renderLogin(entry = "/login") {
   const router = createMemoryRouter(
     [
       { path: "/login", element: <Login /> },
       { path: "/map", element: <p>Map</p> },
-      { path: "/", element: <p>Home</p> },
+      { path: "/catalogue", element: <p>Catalogue</p> },
     ],
     { initialEntries: [entry] },
   );
@@ -30,7 +30,7 @@ describe("Login", () => {
     const calls = mockApi({ "POST /auth/login": { body: { access_token: "t", token_type: "bearer" } } });
     renderLogin();
     await submit();
-    expect(await screen.findByText("Home")).toBeInTheDocument();
+    expect(await screen.findByText("Catalogue")).toBeInTheDocument();
     expect(calls[0].body).toEqual({ email: "me@example.com", password: "a long password" });
   });
 
@@ -71,7 +71,7 @@ describe("after a session expired", () => {
     mockApi({ "POST /auth/login": { body: { access_token: "t", token_type: "bearer" } } });
     renderLogin(`/login?next=${encodeURIComponent(next)}`);
     await submit();
-    expect(await screen.findByText("Home")).toBeInTheDocument();
+    expect(await screen.findByText("Catalogue")).toBeInTheDocument();
   });
 
   it("shows and hides the password with the eye button", async () => {

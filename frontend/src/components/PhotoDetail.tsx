@@ -1,11 +1,24 @@
 import "leaflet/dist/leaflet.css";
+import { PlusIcon, XIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { CircleMarker, MapContainer, TileLayer, useMapEvents } from "react-leaflet";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { api, ApiError, json, offsetLabel, photoUrl, position, type Photo } from "./api";
-import InvalidateOnResize from "./InvalidateOnResize";
-import { ATTRIBUTION, DEFAULT_CENTER, DEFAULT_ZOOM, OSM } from "./map";
+import {
+  api,
+  ApiError,
+  fileSize,
+  json,
+  offsetLabel,
+  photoUrl,
+  position,
+  speciesName,
+  speciesOtherNames,
+  type Photo,
+} from "@/api";
+import InvalidateOnResize from "@/components/InvalidateOnResize";
+import SpeciesPicker from "@/components/SpeciesPicker";
+import { ATTRIBUTION, DEFAULT_CENTER, DEFAULT_ZOOM, OSM } from "@/map";
 
 type Props = {
   photo: Photo;
@@ -31,15 +44,89 @@ function positionText(photo: Photo): string {
 /** 0.002 -> "1/500 s", 2 -> "2 s". */
 const shutterText = (seconds: number) => (seconds >= 1 ? `${seconds} s` : `1/${Math.round(1 / seconds)} s`);
 
-const sizeText = (bytes: number) =>
-  bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="grid grid-cols-[6.5rem_1fr] gap-2 py-1.5">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="flex flex-wrap gap-x-1.5">{children}</dd>
     </div>
+  );
+}
+
+/** The photo's species: shown, added with the picker and removed, each change saved at once. */
+function SpeciesSection({ photo, onChange }: Props) {
+  const [adding, setAdding] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save(ids: number[]) {
+    setSaving(true);
+    setError(null);
+    try {
+      onChange(await api<Photo>(`/photos/${photo.id}`, json("PATCH", { species_ids: ids })));
+    } catch (problem) {
+      setError(problem instanceof ApiError ? problem.message : "Could not save the species");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="space-y-2">
+      <h3 className="font-medium">Species</h3>
+      {photo.species.length === 0 ? (
+        <p className="text-muted-foreground italic">No species yet</p>
+      ) : (
+        <ul className="space-y-2">
+          {photo.species.map((species) => (
+            <li key={species.id} className="flex items-center gap-3 rounded-lg border bg-background px-3 py-2">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{speciesName(species)}</span>
+                <span className="block truncate text-xs text-muted-foreground">{speciesOtherNames(species)}</span>
+              </span>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Remove ${speciesName(species)}`}
+                disabled={saving}
+                onClick={() => void save(photo.species_ids.filter((id) => id !== species.id))}
+              >
+                <XIcon />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {adding ? (
+        <div className="flex items-start gap-2">
+          <SpeciesPicker
+            className="flex-1"
+            label="Add species"
+            focusOnMount
+            exclude={photo.species_ids}
+            onPick={(species) => {
+              setAdding(false);
+              void save([...photo.species_ids, species.id]);
+            }}
+          />
+          <Button variant="ghost" onClick={() => setAdding(false)}>
+            Done
+          </Button>
+        </div>
+      ) : (
+        <Button variant="outline" size="sm" disabled={saving} onClick={() => setAdding(true)}>
+          <PlusIcon />
+          Add species
+        </Button>
+      )}
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertTitle>{error}</AlertTitle>
+        </Alert>
+      )}
+    </section>
   );
 }
 
@@ -79,6 +166,8 @@ export default function PhotoDetail({ photo, onChange }: Props) {
       <img src={photoUrl(photo, "preview")} alt="" className="aspect-[3/2] w-full bg-muted object-contain" />
 
       <div className="space-y-6 p-4 text-sm">
+        <SpeciesSection photo={photo} onChange={onChange} />
+
         <section>
           <h3 className="mb-1 font-medium">Details</h3>
           <dl className="divide-y">
@@ -107,7 +196,7 @@ export default function PhotoDetail({ photo, onChange }: Props) {
               <Row label="File">
                 {original.format.toUpperCase()}
                 {original.width !== null && original.height !== null && `, ${original.width} × ${original.height}`}
-                {` · ${sizeText(original.size_bytes)}`}
+                {` · ${fileSize(original.size_bytes)}`}
               </Row>
             )}
           </dl>

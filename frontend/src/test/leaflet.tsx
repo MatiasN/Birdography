@@ -1,5 +1,5 @@
 /** Stand-in for react-leaflet: Leaflet needs layout and SVG/canvas APIs jsdom doesn't have. Use with
- * `vi.mock("react-leaflet", () => import("./test/leaflet"))`.
+ * `vi.mock("react-leaflet", () => import("@/test/leaflet"))`.
  *
  * - CircleMarker and Marker render as elements carrying their props; a Marker is a button showing its icon's HTML.
  * - `clickMap(lat, lon)` fires the map click handler (useMapEvents `click`).
@@ -94,8 +94,6 @@ export function Marker(props: {
     />
   );
 }
-
-export const Popup = ({ children }: { children: ReactNode }) => <div data-testid="popup">{children}</div>;
 
 export const useMap = () => fakeMap;
 

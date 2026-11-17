@@ -6,10 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api, json } from "../api";
+import { api, json } from "@/api";
 
-/** Only same-site paths: "/photos" yes, "//evil.example" or full URLs no. */
-const safePath = (next: string | null) => (next?.startsWith("/") && !next.startsWith("//") ? next : "/");
+/** Only same-site paths: "/map" yes, "//evil.example" or full URLs no; otherwise the Catalogue. */
+const safePath = (next: string | null) => (next?.startsWith("/") && !next.startsWith("//") ? next : "/catalogue");
 
 export default function Login() {
   const navigate = useNavigate();

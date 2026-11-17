@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   api,
+  isJpeg,
+  isRaw,
+  stem,
+  photoTitle,
+  speciesName,
+  speciesOtherNames,
   ApiError,
   hasFile,
   json,
@@ -11,8 +17,8 @@ import {
   SESSION_EXPIRED,
   sizeProblem,
   takenDate,
-} from "./api";
-import { makePhoto, me, mockApi } from "./test/api";
+} from "@/api";
+import { makePhoto, makeSpecies, me, mockApi } from "@/test/api";
 
 const MB = 1024 * 1024;
 const limits = { upload_mb: 40, raw_upload_mb: 70 };
@@ -138,5 +144,38 @@ describe("api", () => {
       Promise.resolve(new Response("<html>Bad gateway</html>", { status: 502, statusText: "Bad Gateway" })),
     );
     await expect(send("/photos")).rejects.toMatchObject({ status: 502, message: "Bad Gateway" });
+  });
+});
+
+describe("file names", () => {
+  it("tells RAW from JPEG and finds what a pair shares", () => {
+    const nef = new File([""], "DSC_0001.NEF");
+    const jpg = new File([""], "dsc_0001.jpg");
+    expect([isRaw(nef), isRaw(jpg), isJpeg(nef), isJpeg(jpg)]).toEqual([true, false, false, true]);
+    expect(stem(nef)).toBe(stem(jpg));
+    expect(stem(new File([""], "noext"))).toBe("noext"); // no dot: the whole name
+  });
+});
+
+describe("species names", () => {
+  const both = makeSpecies();
+  const portugueseOnly = makeSpecies({ name_en: null });
+  const neither = makeSpecies({ name_en: null, name_pt: null }); // older records may lack common names
+
+  it("shows English, else Portuguese, else the scientific name", () => {
+    expect([both, portugueseOnly, neither].map(speciesName)).toEqual(["Grey Heron", "Garça-real", "Ardea cinerea"]);
+  });
+
+  it("puts the names not shown on the second line", () => {
+    expect([both, portugueseOnly, neither].map(speciesOtherNames)).toEqual([
+      "Garça-real · Ardea cinerea",
+      "Ardea cinerea",
+      "Ardea cinerea",
+    ]);
+  });
+
+  it("titles a photo after its first species", () => {
+    expect(photoTitle(makePhoto({ species: [portugueseOnly, both] }))).toBe("Garça-real");
+    expect(photoTitle(makePhoto())).toBe("Photo details");
   });
 });

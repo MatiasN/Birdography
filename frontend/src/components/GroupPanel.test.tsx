@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import GroupPanel, { PAGE } from "./GroupPanel";
+import GroupPanel, { PAGE } from "@/components/GroupPanel";
 
 const ids = (n: number, from = 1) => Array.from({ length: n }, (_, i) => from + i);
 const thumbnails = () => screen.queryAllByRole("button", { name: /^Photo \d+ of \d+$/ });

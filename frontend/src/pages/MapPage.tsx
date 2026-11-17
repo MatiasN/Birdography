@@ -1,13 +1,15 @@
 import { divIcon, type LeafletKeyboardEvent, type Map as LeafletMap } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ZoomInIcon } from "lucide-react";
+import { ImagesIcon, MapPinOffIcon, UploadIcon, ZoomInIcon } from "lucide-react";
+import { Link } from "react-router-dom";
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import EmptyState from "@/components/EmptyState";
 import ResponsivePanel from "@/components/ResponsivePanel";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { usePhotoParam } from "@/usePhotoParam";
-import { api, fileUrl, type Photo } from "../api";
+import { usePhotoParam } from "@/hooks/usePhotoParam";
+import { api, fileUrl, photoTitle, type Photo, type Summary } from "@/api";
 import {
   countLabel,
   MARKER_PX,
@@ -17,11 +19,11 @@ import {
   type GroupItem,
   type MapItem,
   type Point,
-} from "../clusters";
-import GroupPanel from "../GroupPanel";
-import InvalidateOnResize from "../InvalidateOnResize";
-import { ATTRIBUTION, DEFAULT_CENTER, DEFAULT_ZOOM, OSM } from "../map";
-import PhotoDetail from "../PhotoDetail";
+} from "@/clusters";
+import GroupPanel from "@/components/GroupPanel";
+import InvalidateOnResize from "@/components/InvalidateOnResize";
+import { ATTRIBUTION, DEFAULT_CENTER, DEFAULT_ZOOM, OSM } from "@/map";
+import PhotoDetail from "@/components/PhotoDetail";
 
 /**
  * Every marker is a MARKER_PX circle: a thumbnail for one photo, a count for a group. The white ring stays white in
@@ -99,8 +101,45 @@ function Markers({ index, onPhoto, onGroup }: MarkersProps) {
   ));
 }
 
+/** Over an empty map (plan 0008 §8): how photos get a position, and where to start. */
+function NothingOnTheMap({ total }: { total: Summary | "unknown" }) {
+  const none = total !== "unknown" && total.photos === 0;
+  return (
+    <div className="pointer-events-none absolute inset-0 z-[1010] flex items-center justify-center p-4">
+      <Card className="pointer-events-auto max-w-md py-2">
+        <EmptyState
+          icon={MapPinOffIcon}
+          title="Nothing on the map yet"
+          heading="h2"
+          action={
+            <Button asChild>
+              {none ? (
+                <Link to="/upload">
+                  <UploadIcon />
+                  Upload photos
+                </Link>
+              ) : (
+                <Link to="/catalogue?located=false">
+                  <ImagesIcon />
+                  Photos without a position
+                </Link>
+              )}
+            </Button>
+          }
+        >
+          {none
+            ? "Your photos show up here where they were taken. Positions come from the camera's GPS, or you pick the spot yourself in a photo's details."
+            : "None of your photos has a position yet. Positions come from the camera's GPS; for the others, open the photo in the Catalogue and pick the spot on its map."}
+        </EmptyState>
+      </Card>
+    </div>
+  );
+}
+
 export default function MapPage() {
   const [points, setPoints] = useState<Point[] | null>(null);
+  // null until the count arrives, so the message doesn't change under the user's eyes.
+  const [total, setTotal] = useState<Summary | "unknown" | null>(null);
   const [group, setGroup] = useState<Group | null>(null);
   const [photo, setPhoto] = useState<Photo | null>(null);
   const { photoId, open: openPhoto, close: closePhoto } = usePhotoParam();
@@ -109,6 +148,12 @@ export default function MapPage() {
 
   const load = useCallback(() => api<Point[]>("/photos/points").then(setPoints), []);
   useEffect(() => void load(), [load]);
+
+  // With nothing to show, whether the account has photos at all decides what the empty map suggests.
+  const empty = points?.length === 0;
+  useEffect(() => {
+    if (empty) void api<Summary>("/photos/summary").then(setTotal, () => setTotal("unknown"));
+  }, [empty]);
 
   // The open photo comes from the URL (?photo=), so a link or a reload opens it too.
   useEffect(() => {
@@ -128,29 +173,27 @@ export default function MapPage() {
 
   return (
     <div className="flex flex-1">
-      {/* isolate: Leaflet's controls (z-index 1000) stay inside the map instead of covering the phone sheet. */}
-      <div className="relative isolate h-[calc(100dvh-7.5rem)] min-w-0 flex-1 md:h-dvh">
+      {/* isolate: Leaflet's controls (z-index 1000) stay inside the map instead of covering the phone sheet.
+          Phone height: the screen minus the top bar (h-14) and the tab bar. */}
+      <div className="relative isolate h-[calc(100dvh-3.5rem-var(--tab-bar-height))] min-w-0 flex-1 md:h-dvh">
         <MapContainer center={DEFAULT_CENTER} zoom={DEFAULT_ZOOM} maxZoom={MAX_ZOOM} className="size-full">
           <TileLayer url={OSM} attribution={ATTRIBUTION} maxZoom={MAX_ZOOM} />
           <InvalidateOnResize />
           {index && <Markers index={index} onPhoto={openPhoto} onGroup={setGroup} />}
         </MapContainer>
 
-        {index?.size === 0 && (
-          <Card className="absolute top-3 left-1/2 z-[1010] -translate-x-1/2 px-4 py-2 text-muted-foreground">
-            No photos with a position yet.
-          </Card>
-        )}
+        {index?.size === 0 && total !== null && <NothingOnTheMap total={total} />}
       </div>
 
       {/* One panel at a time: a photo opened from a group takes its place, and closing it brings the group back. */}
       {shown ? (
-        <ResponsivePanel title="Photo details" onClose={closePhoto}>
+        <ResponsivePanel title={photoTitle(shown)} onClose={closePhoto}>
           <PhotoDetail photo={shown} onChange={changed} />
         </ResponsivePanel>
       ) : (
         group && (
           <ResponsivePanel
+            // A new panel per group, so GroupPanel's count of shown photos starts over.
             key={group.key}
             title={`${group.photoIds.length} photos here`}
             onClose={closeGroup}

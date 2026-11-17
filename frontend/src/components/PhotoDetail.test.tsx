@@ -1,12 +1,12 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import type { Photo } from "./api";
-import PhotoDetail from "./PhotoDetail";
-import { deferred, makePhoto, mockApi } from "./test/api";
-import { clickMap } from "./test/leaflet";
+import type { Photo } from "@/api";
+import PhotoDetail from "@/components/PhotoDetail";
+import { deferred, makePhoto, makeSpecies, mockApi } from "@/test/api";
+import { clickMap } from "@/test/leaflet";
 
-vi.mock("react-leaflet", () => import("./test/leaflet"));
+vi.mock("react-leaflet", () => import("@/test/leaflet"));
 
 function renderDetail(photo: Photo) {
   const onChange = vi.fn<(photo: Photo) => void>();
@@ -24,7 +24,7 @@ describe("PhotoDetail", () => {
     expect(screen.getByText("Taken").nextElementSibling).toHaveTextContent(
       new RegExp(`${new Date("2026-05-01T09:00:00").toLocaleString()}.*UTC-03:00.*set by you`),
     );
-    expect(screen.getByText("NIKON Z 5")).toBeInTheDocument();
+    expect(screen.getByText("Nikon Z 5")).toBeInTheDocument();
     expect(screen.getByText("NIKKOR Z 100-400mm")).toBeInTheDocument();
     expect(screen.getByText("ISO 800")).toBeInTheDocument();
     expect(screen.getByText("f/5.6")).toBeInTheDocument();
@@ -110,7 +110,10 @@ describe("PhotoDetail", () => {
     ],
     [
       "a generic message on network errors",
-      () => vi.stubGlobal("fetch", () => Promise.reject(new TypeError("offline"))),
+      () =>
+        vi.stubGlobal("fetch", () => {
+          throw new TypeError("offline");
+        }),
       "Could not save the position",
     ],
   ])("shows %s when saving fails", async (_, setup, message) => {
@@ -134,5 +137,77 @@ describe("PhotoDetail", () => {
     );
     expect(screen.getByText("2 s")).toBeInTheDocument();
     expect(screen.getByText("NEF · 52.3 MB")).toBeInTheDocument();
+  });
+});
+
+const section = () => screen.getByRole("heading", { name: "Species" }).parentElement!;
+
+describe("PhotoDetail's species", () => {
+  const heron = makeSpecies({ id: 1 });
+  const egret = makeSpecies({ id: 2, scientific_name: "Egretta garzetta", name_en: "Little Egret", name_pt: null });
+
+  it("lists them with their other names, or says there are none", () => {
+    renderDetail(makePhoto({ species_ids: [1, 2], species: [heron, egret] }));
+    const items = within(section()).getAllByRole("listitem");
+    expect(items[0]).toHaveTextContent("Grey HeronGarça-real · Ardea cinerea");
+    expect(items[1]).toHaveTextContent("Little EgretEgretta garzetta");
+  });
+
+  it("says when there are none", () => {
+    renderDetail(makePhoto());
+    expect(within(section()).getByText("No species yet")).toBeInTheDocument();
+  });
+
+  it("removes one and saves at once", async () => {
+    const saved = makePhoto({ species_ids: [2], species: [egret] });
+    const calls = mockApi({ "PATCH /photos/1": { body: saved } });
+    const { onChange } = renderDetail(makePhoto({ species_ids: [1, 2], species: [heron, egret] }));
+    await userEvent.click(screen.getByRole("button", { name: "Remove Grey Heron" }));
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(saved));
+    expect(calls[0].body).toEqual({ species_ids: [2] });
+  });
+
+  it("adds one with the picker, after the others", async () => {
+    const saved = makePhoto({ species_ids: [1, 2], species: [heron, egret] });
+    const calls = mockApi({
+      "GET /species?q=egret&limit=8": { body: [heron, egret] },
+      "PATCH /photos/1": { body: saved },
+    });
+    const { onChange } = renderDetail(makePhoto({ species_ids: [1], species: [heron] }));
+    await userEvent.click(screen.getByRole("button", { name: "Add species" }));
+    const field = screen.getByRole("combobox", { name: "Add species" });
+    expect(field).toHaveFocus();
+    await userEvent.type(field, "egret");
+    const options = await screen.findAllByRole("option");
+    expect(options[0]).toHaveTextContent("Little Egret"); // the heron is on the photo already
+    await userEvent.click(options[0]);
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(saved));
+    expect(calls.at(-1)?.body).toEqual({ species_ids: [1, 2] });
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  });
+
+  it("hides the picker with Done", async () => {
+    renderDetail(makePhoto());
+    await userEvent.click(screen.getByRole("button", { name: "Add species" }));
+    await userEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["the API's message", { status: 400, body: { detail: "Unknown species" } }, "Unknown species"],
+    [
+      "a plain one on a network error",
+      () => {
+        throw new TypeError("offline");
+      },
+      "Could not save the species",
+    ],
+  ])("shows %s when saving fails", async (_, reply, message) => {
+    mockApi({ "PATCH /photos/1": reply });
+    const { onChange } = renderDetail(makePhoto({ species_ids: [1], species: [heron] }));
+    await userEvent.click(screen.getByRole("button", { name: "Remove Grey Heron" }));
+    expect(await within(section()).findByText(message)).toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Remove Grey Heron" })).toBeEnabled();
   });
 });

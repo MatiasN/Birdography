@@ -39,3 +39,9 @@ window.matchMedia ??= (query: string) =>
     removeListener: () => undefined,
     dispatchEvent: () => false,
   }) satisfies MediaQueryList;
+
+// Object URLs for the Upload tab's previews: jsdom has no blob URLs, so hand out stand-in names.
+let objectUrls = 0;
+if (!("createObjectURL" in URL)) {
+  Object.assign(URL, { createObjectURL: () => `blob:test/${++objectUrls}`, revokeObjectURL: () => undefined });
+}

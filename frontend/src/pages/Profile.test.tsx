@@ -2,9 +2,9 @@ import { render, screen } from "@testing-library/react";
 import { createMemoryRouter, Outlet, RouterProvider } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import type { LayoutContext } from "@/Layout";
-import { me, mockApi, type Routes } from "../test/api";
-import Profile from "./Profile";
+import type { LayoutContext } from "@/hooks/useLayout";
+import { me, mockApi, type Routes } from "@/test/api";
+import Profile from "@/pages/Profile";
 
 /** Profile inside a parent that provides what Layout gives its pages. */
 function renderProfile(logout = vi.fn<() => Promise<void>>()) {

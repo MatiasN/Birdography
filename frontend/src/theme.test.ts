@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { stubMatchMedia } from "./test/media";
-import { applyTheme, followSystemTheme, setTheme, storedTheme } from "./theme";
+import { stubMatchMedia } from "@/test/media";
+import { applyTheme, followSystemTheme, setTheme, storedTheme } from "@/theme";
 
 const isDark = () => document.documentElement.classList.contains("dark");
 

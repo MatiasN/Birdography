@@ -1,14 +1,14 @@
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { JOIN_PX, MARKER_PX } from "../clusters";
-import { makePhoto, mockApi, type Routes } from "../test/api";
-import { clickMap, fakeMap } from "../test/leaflet";
-import { stubMatchMedia } from "../test/media";
-import { renderAt } from "../test/router";
-import MapPage from "./MapPage";
+import { JOIN_PX, MARKER_PX } from "@/clusters";
+import { makePhoto, makeSpecies, mockApi, type Routes } from "@/test/api";
+import { clickMap, fakeMap } from "@/test/leaflet";
+import { stubMatchMedia } from "@/test/media";
+import { renderAt } from "@/test/router";
+import MapPage from "@/pages/MapPage";
 
-vi.mock("react-leaflet", () => import("../test/leaflet"));
+vi.mock("react-leaflet", () => import("@/test/leaflet"));
 
 /** Longitude difference of `px` screen pixels at `zoom` on the equator. */
 const degreesFor = (px: number, zoom: number) => (px / (256 * 2 ** zoom)) * 360;
@@ -96,11 +96,11 @@ describe("MapPage", () => {
     const { router } = await start(
       {
         "GET /photos/points": { body: [{ id: 7, ...PORTUGAL }] },
-        "GET /photos/7": { body: makePhoto({ id: 7 }) },
+        "GET /photos/7": { body: makePhoto({ id: 7, species_ids: [1], species: [makeSpecies()] }) },
       },
       "/map?photo=7",
     );
-    expect(await sheet("Photo details")).toBeInTheDocument();
+    expect(await sheet("Grey Heron")).toBeInTheDocument(); // named after its species
     // Arrived with the link: closing drops the parameter instead of leaving the page.
     await userEvent.click(screen.getByRole("button", { name: "Back" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
@@ -108,7 +108,7 @@ describe("MapPage", () => {
     expect(router.state.location.search).toBe("");
 
     await userEvent.click(screen.getByTitle("Open photo"));
-    expect(await sheet("Photo details")).toBeInTheDocument();
+    expect(await sheet("Grey Heron")).toBeInTheDocument();
     await act(() => router.navigate(-1)); // the browser's Back button
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
@@ -203,11 +203,36 @@ describe("MapPage", () => {
     expect(fakeMap.fitBounds).toHaveBeenCalledTimes(1);
   });
 
-  it("says when no photo has a position yet", async () => {
-    await start({ "GET /photos/points": { body: [] } });
-    expect(await screen.findByText("No photos with a position yet.")).toBeInTheDocument();
+  it("explains an empty map and points to the photos without a position", async () => {
+    await start({
+      "GET /photos/points": { body: [] },
+      "GET /photos/summary": { body: { photos: 12, species: 3 } },
+    });
+    expect(await screen.findByRole("heading", { level: 2, name: "Nothing on the map yet" })).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "Photos without a position" })).toHaveAttribute(
+      "href",
+      "/catalogue?located=false",
+    );
+    expect(screen.getByText(/None of your photos has a position yet/)).toBeInTheDocument();
     expect(markers()).toEqual([]);
     expect(fakeMap.fitBounds).not.toHaveBeenCalled();
+  });
+
+  it("sends a new account to the Upload tab from the empty map", async () => {
+    await start({
+      "GET /photos/points": { body: [] },
+      "GET /photos/summary": { body: { photos: 0, species: 0 } },
+    });
+    expect(await screen.findByRole("link", { name: "Upload photos" })).toHaveAttribute("href", "/upload");
+    expect(screen.getByText(/Your photos show up here where they were taken/)).toBeInTheDocument();
+  });
+
+  it("still explains the empty map when the count can't be loaded", async () => {
+    await start({
+      "GET /photos/points": { body: [] },
+      "GET /photos/summary": { status: 500, body: {} },
+    });
+    expect(await screen.findByRole("link", { name: "Photos without a position" })).toBeInTheDocument();
   });
 
   it("redraws the map when its container changes size (a panel opening beside it)", async () => {

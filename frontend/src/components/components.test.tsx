@@ -1,11 +1,12 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { BirdIcon } from "lucide-react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { stubMatchMedia } from "../test/media";
-import EmptyState from "./EmptyState";
-import SidePanel from "./SidePanel";
-import ThemePicker from "./ThemePicker";
+import { stubMatchMedia } from "@/test/media";
+import EmptyState from "@/components/EmptyState";
+import ResponsivePanel from "@/components/ResponsivePanel";
+import SidePanel from "@/components/SidePanel";
+import ThemePicker from "@/components/ThemePicker";
 
 describe("ThemePicker", () => {
   beforeEach(() => {
@@ -104,5 +105,34 @@ describe("EmptyState", () => {
     );
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
     expect(screen.queryByText("Coming in Phase 2")).not.toBeInTheDocument();
+  });
+});
+
+// A focusable element that isn't an HTMLElement: a link inside an SVG.
+const marker = (
+  <svg>
+    <a href="#group" aria-label="Marker" />
+  </svg>
+);
+
+describe("ResponsivePanel", () => {
+  it("on phones, leaves focus alone on close when what had it can't take it back", async () => {
+    stubMatchMedia(false, false);
+    const { rerender } = render(marker);
+    screen.getByLabelText("Marker").focus();
+    rerender(
+      <>
+        {marker}
+        <ResponsivePanel title="Photo details" onClose={() => undefined}>
+          body
+        </ResponsivePanel>
+      </>,
+    );
+    expect(await screen.findByRole("dialog", { name: "Photo details" })).toBeInTheDocument();
+    rerender(marker);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // Radix hands focus back in a timeout after the sheet unmounts.
+    await act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+    expect(screen.getByLabelText("Marker")).not.toHaveFocus();
   });
 });

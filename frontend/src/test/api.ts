@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import type { Photo, PhotoFile, User } from "../api";
+import type { Photo, PhotoFile, Species, User } from "@/api";
 
 export type Answer = { status?: number; body?: unknown };
 /** An answer, one that arrives later (see `deferred`), or a function that throws, as fetch does on network errors. */
@@ -54,7 +54,9 @@ export function makePhoto(overrides: Partial<Photo> = {}): Photo {
     taken_at_local: "2026-05-01T09:00:00",
     taken_offset_minutes: 60,
     taken_at_manual: false,
-    camera: "NIKON Z 5",
+    camera: "Nikon Z 5",
+    camera_make: "Nikon",
+    camera_model: "Z 5",
     lens: "NIKKOR Z 100-400mm",
     iso: 800,
     shutter_seconds: 0.002,
@@ -64,11 +66,20 @@ export function makePhoto(overrides: Partial<Photo> = {}): Photo {
     lon: -7.93,
     point_manual: false,
     species_ids: [],
+    species: [],
     location_id: null,
     files: [file("original"), file("thumbnail")],
     ...overrides,
   };
 }
+
+export const makeSpecies = (overrides: Partial<Species> = {}): Species => ({
+  id: 1,
+  scientific_name: "Ardea cinerea",
+  name_en: "Grey Heron",
+  name_pt: "Garça-real",
+  ...overrides,
+});
 
 /** /auth/me's shape; expires far enough out that Layout's timer never fires during a test. */
 export const me = (overrides: Partial<User> = {}) => ({

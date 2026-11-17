@@ -44,7 +44,7 @@ services:
     build: ./frontend
     restart: unless-stopped
     environment:
-      CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-75m}
+      CLIENT_MAX_BODY_SIZE: ${CLIENT_MAX_BODY_SIZE:-115m}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
     ports:
       # Reachable from other devices on the network by default; BIND_ADDRESS=127.0.0.1 keeps it to this machine.

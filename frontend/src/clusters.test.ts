@@ -10,7 +10,7 @@ import {
   type GroupItem,
   type MapItem,
   type Point,
-} from "./clusters";
+} from "@/clusters";
 
 const WORLD: [number, number, number, number] = [-180, -85, 180, 85];
 

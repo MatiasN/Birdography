@@ -36,6 +36,13 @@
   },
   "overrides": [
     {
+      // The WAI-ARIA combobox pattern: an input with role=combobox and a listbox of options it points at with
+      // aria-activedescendant. The native tags these rules suggest (select, datalist) can't show three names per
+      // option or an 'add new' entry, and the options are chosen from the input's keyboard handler, never focused.
+      "files": ["src/components/SpeciesPicker.tsx"],
+      "rules": { "jsx-a11y/prefer-tag-over-role": "off", "jsx-a11y/click-events-have-key-events": "off" }
+    },
+    {
       "files": ["**/*.test.ts", "**/*.test.tsx", "src/test/**"],
       "rules": { "typescript/no-non-null-assertion": "off" }
     }

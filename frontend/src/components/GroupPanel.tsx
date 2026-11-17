@@ -1,8 +1,6 @@
 import { useState } from "react";
+import { fileUrl } from "@/api";
 import { Button } from "@/components/ui/button";
-
-// Give the panel a `key` per group: the page count then starts over for each one.
-import { fileUrl } from "./api";
 
 /** Thumbnails shown at first; big groups reveal more on demand so the browser doesn't load thousands at once. */
 export const PAGE = 60;

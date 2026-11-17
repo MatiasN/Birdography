@@ -1,10 +1,47 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
 
 /* `.dark` on <html> (shadcn's convention); public/theme.js sets it before the first paint. */
 @custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * The state variants our shadcn components use (`data-open:`, `group-data-vertical/…:`), copied from
+ * shadcn/tailwind.css so the shadcn CLI needn't be a dependency (plan 0008 §3). Copy more from there when an
+ * added component needs them.
+ */
+@custom-variant data-open {
+  &:where([data-state="open"]),
+  &:where([data-open]:not([data-open="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-closed {
+  &:where([data-state="closed"]),
+  &:where([data-closed]:not([data-closed="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-disabled {
+  &:where([data-disabled="true"]),
+  &:where([data-disabled]:not([data-disabled="false"])) {
+    @slot;
+  }
+}
+
+@custom-variant data-horizontal {
+  &:where([data-orientation="horizontal"]) {
+    @slot;
+  }
+}
+
+@custom-variant data-vertical {
+  &:where([data-orientation="vertical"]) {
+    @slot;
+  }
+}
 
 /*
  * The app's colours as before Phase 1.5: emerald for actions and the active tab, stone for surfaces and text,
@@ -33,24 +70,15 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-warning: var(--warning);
-  --color-warning-foreground: var(--warning-foreground);
   --color-success: var(--success);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
 
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
@@ -63,6 +91,9 @@
 
 :root {
   --radius: 0.625rem;
+  /* The phone's bottom tab bar, home indicator included: the bar, the page's bottom padding and the map's
+     height all take it from here. */
+  --tab-bar-height: calc(4rem + env(safe-area-inset-bottom));
 
   --background: oklch(0.985 0.001 106.423); /* stone-50 */
   --foreground: oklch(0.216 0.006 56.043); /* stone-900 */
@@ -80,26 +111,16 @@
   --accent-foreground: oklch(0.432 0.095 166.913); /* emerald-800 */
   --destructive: oklch(0.505 0.213 27.518); /* red-700 */
   --warning: oklch(0.555 0.163 48.998); /* amber-700 */
-  --warning-foreground: oklch(1 0 0);
   --success: oklch(0.508 0.118 165.612);
   --border: oklch(0.923 0.003 48.717); /* stone-200 */
   --input: oklch(0.869 0.005 56.366); /* stone-300 */
   --ring: oklch(0.696 0.17 162.48); /* emerald-500 */
 
-  --chart-1: oklch(0.508 0.118 165.612);
-  --chart-2: oklch(0.555 0.163 48.998);
-  --chart-3: oklch(0.696 0.17 162.48);
-  --chart-4: oklch(0.444 0.011 73.639);
-  --chart-5: oklch(0.828 0.189 84.429);
-
   --sidebar: oklch(1 0 0);
   --sidebar-foreground: oklch(0.216 0.006 56.043);
-  --sidebar-primary: oklch(0.508 0.118 165.612);
-  --sidebar-primary-foreground: oklch(1 0 0);
   --sidebar-accent: oklch(0.95 0.052 163.051);
   --sidebar-accent-foreground: oklch(0.432 0.095 166.913);
   --sidebar-border: oklch(0.923 0.003 48.717);
-  --sidebar-ring: oklch(0.696 0.17 162.48);
 }
 
 /* The same hues for a dark background: stone-950/900 surfaces, lighter emerald so it reads on them. */
@@ -120,26 +141,16 @@
   --accent-foreground: oklch(0.905 0.093 164.15); /* emerald-200 */
   --destructive: oklch(0.704 0.191 22.216); /* red-400 */
   --warning: oklch(0.828 0.189 84.429); /* amber-400 */
-  --warning-foreground: oklch(0.279 0.077 45.635); /* amber-950 */
   --success: oklch(0.765 0.177 163.223);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.596 0.145 163.225); /* emerald-600 */
 
-  --chart-1: oklch(0.765 0.177 163.223);
-  --chart-2: oklch(0.828 0.189 84.429);
-  --chart-3: oklch(0.696 0.17 162.48);
-  --chart-4: oklch(0.709 0.01 56.259);
-  --chart-5: oklch(0.769 0.188 70.08);
-
   --sidebar: oklch(0.216 0.006 56.043);
   --sidebar-foreground: oklch(0.97 0.001 106.424);
-  --sidebar-primary: oklch(0.765 0.177 163.223);
-  --sidebar-primary-foreground: oklch(0.262 0.051 172.552);
   --sidebar-accent: oklch(0.262 0.051 172.552);
   --sidebar-accent-foreground: oklch(0.905 0.093 164.15);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.596 0.145 163.225);
 }
 
 @layer base {

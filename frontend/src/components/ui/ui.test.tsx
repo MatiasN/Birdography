@@ -1,45 +1,28 @@
 // The shadcn components are our code once copied (plan 0007 §4), so they are held to the same 100% gate. Pages
-// cover how they're used; these tests reach every part and variant, including ones no page uses yet.
+// cover how they're used; these tests reach the parts and variants no page does. Parts nothing used were removed
+// (plan 0008 §3); `npx shadcn@<version> add` brings them back when a page needs them.
 import { render, screen } from "@testing-library/react";
+import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { Alert, AlertAction, AlertDescription, AlertTitle } from "./alert";
-import { Avatar, AvatarBadge, AvatarFallback, AvatarGroup, AvatarGroupCount, AvatarImage } from "./avatar";
-import { Badge } from "./badge";
-import { Button } from "./button";
-import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "./card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuPortal,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
-  DropdownMenuShortcut,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "./dropdown-menu";
-import { Input } from "./input";
-import { Label } from "./label";
-import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "./sheet";
-import { Toggle } from "./toggle";
-import { ToggleGroup, ToggleGroupItem } from "./toggle-group";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./tooltip";
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { Toggle } from "@/components/ui/toggle";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 describe("Button", () => {
   it("renders a button with its variant and size", async () => {
@@ -96,15 +79,13 @@ describe("Card", () => {
           <CardHeader>
             <CardTitle>Password</CardTitle>
             <CardDescription>At least 10 characters</CardDescription>
-            <CardAction>action</CardAction>
           </CardHeader>
           <CardContent>body</CardContent>
-          <CardFooter>footer</CardFooter>
         </Card>
         <Card size="sm">small</Card>
       </>,
     );
-    for (const text of ["Password", "At least 10 characters", "action", "body", "footer"]) {
+    for (const text of ["Password", "At least 10 characters", "body"]) {
       expect(screen.getByText(text)).toBeInTheDocument();
     }
     expect(screen.getByText("small")).toHaveAttribute("data-size", "sm");
@@ -131,7 +112,6 @@ describe("Alert", () => {
         <Alert variant="destructive">
           <AlertTitle>Could not save</AlertTitle>
           <AlertDescription>Try again</AlertDescription>
-          <AlertAction>retry</AlertAction>
         </Alert>
         <Alert>plain</Alert>
       </>,
@@ -139,27 +119,23 @@ describe("Alert", () => {
     expect(screen.getAllByRole("alert")).toHaveLength(2);
     expect(screen.getByText("Could not save")).toBeInTheDocument();
     expect(screen.getByText("Try again")).toBeInTheDocument();
-    expect(screen.getByText("retry")).toBeInTheDocument();
   });
 });
 
 describe("Avatar", () => {
-  it("shows the fallback initial, badge and group", () => {
+  it("shows the fallback initial in each size", () => {
     render(
-      <AvatarGroup>
+      <>
         <Avatar size="lg">
-          <AvatarImage src="" alt="" />
           <AvatarFallback>M</AvatarFallback>
-          <AvatarBadge />
         </Avatar>
         <Avatar>
           <AvatarFallback>A</AvatarFallback>
         </Avatar>
-        <AvatarGroupCount>+3</AvatarGroupCount>
-      </AvatarGroup>,
+      </>,
     );
     expect(screen.getByText("M")).toBeInTheDocument();
-    expect(screen.getByText("+3")).toBeInTheDocument();
+    expect(screen.getByText("A")).toBeInTheDocument();
   });
 });
 
@@ -191,21 +167,6 @@ describe("Toggle and ToggleGroup", () => {
   });
 });
 
-describe("Tooltip", () => {
-  it("shows its content on hover", async () => {
-    render(
-      <TooltipProvider>
-        <Tooltip>
-          <TooltipTrigger>Map</TooltipTrigger>
-          <TooltipContent>Photos on the map</TooltipContent>
-        </Tooltip>
-      </TooltipProvider>,
-    );
-    await userEvent.hover(screen.getByText("Map"));
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("Photos on the map");
-  });
-});
-
 describe("DropdownMenu", () => {
   it("opens from its trigger and runs an item", async () => {
     const onSelect = vi.fn<() => void>();
@@ -223,74 +184,49 @@ describe("DropdownMenu", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
-  it("renders every part", () => {
+  it("renders a label, an inset destructive item and a separator", () => {
     render(
       <DropdownMenu open>
         <DropdownMenuTrigger>Menu</DropdownMenuTrigger>
-        <DropdownMenuPortal>
-          <DropdownMenuContent>
-            <DropdownMenuLabel inset>Signed in</DropdownMenuLabel>
-            <DropdownMenuGroup>
-              <DropdownMenuItem inset variant="destructive">
-                Log out
-                <DropdownMenuShortcut>⌘Q</DropdownMenuShortcut>
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuCheckboxItem checked inset>
-              Show captions
-            </DropdownMenuCheckboxItem>
-            <DropdownMenuRadioGroup value="grid">
-              <DropdownMenuRadioItem value="grid" inset>
-                Grid
-              </DropdownMenuRadioItem>
-            </DropdownMenuRadioGroup>
-            <DropdownMenuSub open>
-              <DropdownMenuSubTrigger inset>More</DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
-                <DropdownMenuItem>Nested</DropdownMenuItem>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          </DropdownMenuContent>
-        </DropdownMenuPortal>
+        <DropdownMenuContent>
+          <DropdownMenuLabel inset>Signed in</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem inset variant="destructive">
+            Log out
+          </DropdownMenuItem>
+        </DropdownMenuContent>
       </DropdownMenu>,
     );
     expect(screen.getByText("Signed in")).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: /Log out/ })).toHaveAttribute("data-variant", "destructive");
-    expect(screen.getByText("⌘Q")).toBeInTheDocument();
-    expect(screen.getByRole("menuitemcheckbox", { name: "Show captions" })).toBeChecked();
-    expect(screen.getByRole("menuitemradio", { name: "Grid" })).toBeChecked();
-    expect(screen.getByRole("menuitem", { name: "Nested" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Log out" })).toHaveAttribute("data-variant", "destructive");
   });
 });
 
-describe("Sheet", () => {
-  it("opens from its trigger, traps it as a dialog and closes", async () => {
-    render(
-      <Sheet>
-        <SheetTrigger>Open photo</SheetTrigger>
-        <SheetContent side="bottom">
-          <SheetHeader>
+/** Opens the sheet from a plain button and unmounts it on close, as ResponsivePanel does. */
+function Opener() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button onClick={() => setOpen(true)}>Open photo</button>
+      {open && (
+        <Sheet open onOpenChange={setOpen}>
+          <SheetContent side="bottom" aria-describedby={undefined}>
             <SheetTitle>Common kingfisher</SheetTitle>
-            <SheetDescription>Photo details</SheetDescription>
-          </SheetHeader>
-          <SheetFooter>
-            <SheetClose>Done</SheetClose>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>,
-    );
+          </SheetContent>
+        </Sheet>
+      )}
+    </>
+  );
+}
+
+describe("Sheet", () => {
+  it("opens as a dialog, closes with its built-in button", async () => {
+    render(<Opener />);
     await userEvent.click(screen.getByRole("button", { name: "Open photo" }));
     const dialog = await screen.findByRole("dialog", { name: "Common kingfisher" });
     expect(dialog).toHaveAttribute("data-side", "bottom");
-    expect(dialog).toHaveAccessibleDescription("Photo details");
 
     await userEvent.click(screen.getByRole("button", { name: "Close" })); // the built-in close button
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open photo" })).toHaveFocus();
-
-    await userEvent.click(screen.getByRole("button", { name: "Open photo" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Done" }));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
