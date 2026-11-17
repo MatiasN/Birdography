@@ -16,7 +16,10 @@ setting() { sed -n "s/^$1=//p" "$config" | tail -n 1; }
 port=$(setting DEV_HTTP_PORT)
 email=$(setting DEV_USER_EMAIL)
 password=$(setting DEV_USER_PASSWORD)
-[ -n "$port" ] && [ -n "$email" ] && [ -n "$password" ] || { echo "screenshots: DEV_HTTP_PORT, DEV_USER_EMAIL and DEV_USER_PASSWORD must be set in $config" >&2; exit 1; }
+if [ -z "$port" ] || [ -z "$email" ] || [ -z "$password" ]; then
+  echo "screenshots: DEV_HTTP_PORT, DEV_USER_EMAIL and DEV_USER_PASSWORD must be set in $config" >&2
+  exit 1
+fi
 
 files=$(mktemp -d)
 trap 'rm -rf "$files"' EXIT
