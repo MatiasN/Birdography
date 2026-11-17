@@ -157,6 +157,27 @@ npm run dev
 
 Open http://localhost:5173. Vite proxies `/api` to `http://localhost:8000` (override with `API_URL`).
 
+### UI components
+
+The [shadcn/ui](https://ui.shadcn.com) components in `frontend/src/components/ui/` are copies we own and edit; only
+the parts in use are kept, since the coverage gate measures them like the rest. The shadcn CLI is not a
+dependency. To add a component, or a part removed earlier, run it with a pinned version from `frontend/`:
+
+```bash
+npx shadcn@4.23.0 add popover
+```
+
+Then run Prettier and oxlint over the new file, and copy any `@custom-variant` it relies on from shadcn's
+`tailwind.css` into `src/index.css`.
+
+### Screenshots and designs
+
+`docs/screenshots/` holds the README's screenshots of the real app. `scripts/screenshots.sh` retakes them from the
+running dev stack (`scripts/dev.sh up`) with the official Playwright Docker image, so no browser is installed on
+the host; it reads the stack's address and login from `.dev/config.env`. The Upload screenshots upload three small
+JPEGs to the dev account each run. `docs/design/` holds the mockups the Phase 1.5 pages were agreed on (plan 0007);
+they are frozen there, the HTML they were rendered from is gone (plan 0008 D13).
+
 ### Backend outside Docker
 
 ```bash
@@ -205,7 +226,7 @@ In `.env` or the environment. A test (`tests/test_config.py`) fails when a backe
 | `PUID`, `PGID` | 1000 | user and group the backend runs as and the photo files belong to; not 0 |
 | `API_PORT` | 8000 | port the API is published on, on `127.0.0.1`, by the development override only |
 | `TRUSTED_PROXIES` | empty | addresses or CIDRs of a reverse proxy in front of the frontend (space or comma separated), whose `X-Forwarded-For` is then trusted |
-| `CLIENT_MAX_BODY_SIZE` | `75m` | nginx request limit; keep it above `MAX_RAW_UPLOAD_MB` |
+| `CLIENT_MAX_BODY_SIZE` | `115m` | nginx request limit; keep it above `MAX_RAW_UPLOAD_MB` + `MAX_UPLOAD_MB`, since a RAW+JPEG pair is one request. A pair over it gets nginx's own 413, which the Upload tab shows as "Too large for the server's request limit" with *Separate* to send the two files one by one |
 | `API_URL` | `http://localhost:8000` | where `npm run dev` proxies `/api` (Vite only) |
 | `ENV_FILE` | `.env` | file the `db` and `backend` containers read their settings from; `scripts/dev.sh` points it at `.dev/config.env` |
 
@@ -275,15 +296,32 @@ The dev stack (`scripts/dev.sh`) holds disposable data: `scripts/dev.sh reset` g
 
 ## Map
 
-`GET /photos/points` returns every located photo of the user as `{id, lat, lon}`, newest first, with the same filters as `GET /photos` (`species_id`, `camera`, `taken_from`, `taken_to`) and no limit: about 40 bytes a photo, gzipped by nginx. The frontend clusters them in the browser with [supercluster](https://github.com/mapbox/supercluster) (`src/clusters.ts`):
+`GET /photos/points` returns every located photo of the user as `{id, lat, lon}`, newest first, with the same filters as `GET /photos` (see [Catalogue filters](#catalogue-filters)) and no limit: about 40 bytes a photo, gzipped by nginx. The frontend clusters them in the browser with [supercluster](https://github.com/mapbox/supercluster) (`src/clusters.ts`):
 
 - Every marker is `MARKER_PX` (40 px) wide: a round thumbnail for one photo, a count for a group.
 - Markers whose centres are closer than `JOIN_PX` (1.5 markers) join into one. supercluster places groups at the average position of their photos, which can drift onto a neighbour, so a last pass joins anything still overlapping into the larger marker. No two drawn markers overlap at any zoom; a test checks this over random photo clouds at every zoom level.
 - Clicking a group (or Enter/Space on a focused one) opens a panel with all its photos, newest first, 60 at a time; a photo opens its details. "Zoom in" flies to the level where the group splits. Photos at the same spot never split, so their panel has no zoom button.
 
+## Catalogue filters
+
+`GET /photos`, `GET /photos/points` and `GET /photos/summary` take the same filters, combined with AND:
+
+| Parameter | Matches |
+|---|---|
+| `species_id` (repeatable) | photos with any of these species |
+| `camera_make`, `camera_model` | the brand and the model, as listed by `GET /photos/cameras` |
+| `date_from`, `date_to` | the day on the camera's clock (`taken_at_local`), both days included |
+| `taken_from`, `taken_to` | the instant (`taken_at`), for API clients |
+| `located` | `true` with a position, `false` without |
+
+`GET /photos/summary` answers `{photos, species}` for the filters, and `GET /photos/cameras` lists the user's
+cameras as `{make, model, photos}`, most used first. Brand and model come from EXIF `Make` and `Model`, with the
+brand written as people know it (`NIKON CORPORATION` → Nikon) and dropped from the model (`NIKON Z 8` → Z 8); the
+list is `BRANDS` in `app/exif.py`.
+
 ## Uploads
 
-`POST /photos` takes one file per request. The type is detected from the content, never the file name: unsupported content gets 415, files over the limit 413, a file already uploaded by anyone 409. ExifTool tells the TIFF-based RAW formats (NEF, ARW, DNG, PEF…) apart from plain TIFF; it trusts the extension for those, so detection runs on an extension-less temp file under `UPLOAD_DIR/.tmp`.
+`POST /photos` takes one file per request. The type is detected from the content, never the file name: unsupported content gets 415, files over the limit 413, a file already uploaded by anyone 409 (with `photo_id` when it is the user's own photo and not in the trash). An optional `species_ids` form field (repeatable) sets the photo's species in the same request; an unknown one gets 400 and nothing is stored. For a RAW+JPEG pair, the camera JPEG goes in the optional `companion` field: it becomes the photo's `preview` with its metadata removed (orientation kept). The main file must then be RAW (else 400) and the companion a JPEG (else 415) under the non-RAW limit (else 413). The Upload tab pairs files by name (`DSC_0001.NEF` + `DSC_0001.JPG`, any case) and, before sending, compares the two files' `DateTimeOriginal` (with its sub-second part), `Make` and `Model`, read in the browser by `src/lib/exif.ts` (JPEG, TIFF-based RAWs, CR3, RAF). A pair that looks like two shots waits, with a notice, until the user uploads it as a pair anyway or separates it; when the files can't be compared it says so and goes ahead. The server runs the same comparison (`exif.pair_warning`) and only logs a mismatch, storing the pair as sent. ExifTool tells the TIFF-based RAW formats (NEF, ARW, DNG, PEF…) apart from plain TIFF; it trusts the extension for those, so detection runs on an extension-less temp file under `UPLOAD_DIR/.tmp`.
 
 Each photo stores up to three files: the `original`, a JPEG `preview` for formats browsers cannot show (RAW, HEIC, TIFF) and a 400 px `thumbnail`. Derived files keep only the orientation, no GPS or other metadata. If a preview or thumbnail cannot be made the upload still succeeds and the file endpoint falls back to the original. Regenerate missing ones with:
 
@@ -392,7 +430,8 @@ npm run test:watch       # rerun on changes
 - `mockApi(routes)` replaces `fetch` with canned replies keyed by `"METHOD /path"` and returns the calls made. A request to an unknown route fails the test.
 - `deferred()` gives a reply that arrives when the test says so, to check loading states.
 - `makePhoto()` builds a `Photo` with sensible defaults.
-- `src/test/leaflet.tsx` stands in for `react-leaflet` (`vi.mock("react-leaflet", () => import("./test/leaflet"))`), because Leaflet needs layout, SVG and canvas APIs that jsdom lacks. Markers render as elements carrying their position, and `clickMap(lat, lon)` triggers a map click.
+- `stubXhr()` (`src/test/xhr.ts`) replaces `XMLHttpRequest`, which the Upload tab uses for progress: each request lands in the returned list, and the test sends progress, answers or fails it.
+- `src/test/leaflet.tsx` stands in for `react-leaflet` (`vi.mock("react-leaflet", () => import("@/test/leaflet"))`), because Leaflet needs layout, SVG and canvas APIs that jsdom lacks. Markers render as elements carrying their position, and `clickMap(lat, lon)` triggers a map click.
 
 ## Code style
 

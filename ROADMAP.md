@@ -19,7 +19,7 @@ Photo handling, species data and a first look at the map.
 - [x] Photo upload API: JPEG, PNG, TIFF, HEIC, WebP and RAW (NEF, CR2, CR3, ARW, DNG, RAF, ORF, RW2, PEF); 40 MB limit, 70 MB for RAW; detection by content; RAW preview and thumbnails extracted with ExifTool, see [plan 0002](docs/plans/0002-phase1-photo-upload-api.md)
 - [x] Real RAW test fixtures: CC0 samples from raw.pixls.us (NEF, CR3, ARW, DNG) under `backend/tests/fixtures/raw/`, shrunk to their metadata and embedded JPEGs; they cover content detection of extension-less files, embedded preview extraction and the RAW upload limit, see [plan 0003](docs/plans/0003-phase1-raw-fixtures-and-exif.md)
 - [x] EXIF extraction with ExifTool: GPS, local timestamp with offset, camera settings; offset derived from the GPS position (or a spot chosen on the map) when the camera records none; RAW dimensions from the crop tags rather than the sensor size, see [plan 0003](docs/plans/0003-phase1-raw-fixtures-and-exif.md)
-- [x] RAW+JPEG pairs uploaded as one photo (the camera JPEG becomes the preview)
+- [x] RAW+JPEG pairs uploaded as one photo (the camera JPEG becomes the preview, without its metadata); the Upload tab compares the two files' date and camera before sending and holds a pair that looks like two shots until you keep or separate it, see [plan 0008](docs/plans/0008-phase1.5-ui-overhaul-part2.md) §19
 - [x] Photo catalog UI; filters by species, date and camera in the API (the UI filters arrive with Phase 1.5 → Catalogue tab)
 - [x] Map with photo markers: every located photo, no 200-photo limit; nearby markers join into one showing how many photos it holds, and clicking it lists them, see [plan 0004](docs/plans/0004-phase1-hardening-before-phase2.md) Part F
 
@@ -27,16 +27,17 @@ Photo handling, species data and a first look at the map.
 
 A modern look that suits both desktop and phone, and the navigation the next phases fill in. Tabs whose features
 arrive later get a placeholder saying what is coming, so the layout is settled before Phase 2 builds on it.
+Part 1 is [plan 0007](docs/plans/0007-phase1.5-ui-overhaul-part1.md), Part 2 [plan 0008](docs/plans/0008-phase1.5-ui-overhaul-part2.md).
 
-- [ ] Page designs: mockups of every tab (Catalogue, Species, Upload, Map, Near me) and the photo detail, each in a wide-screen and a narrow-screen version, agreed before building them
-- [ ] Design foundation: a modern visual style (type, colors, spacing, light and dark themes) and a small set of shared components (buttons, cards, inputs, sheets, empty states) used by every page
-- [ ] Adaptive layout: the UI follows the screen it is on; wide screens get a desktop layout (sidebar or top navigation, multi-column pages, details beside the list), narrow screens a phone layout (bottom tab bar, single column, details as full-screen sheets, large touch targets); tabs **Catalogue**, **Species**, **Upload**, **Map** and **Near me**; a profile page opened from the account menu (in the sidebar or top bar on wide screens, behind an avatar on phones) holding account settings and logout, with room for the stats added in Phase 3
-- [ ] Catalogue tab: the current photo grid and filters in the new style, with room for the grouping added in Phase 2
-- [ ] Upload tab: uploading moves out of the catalogue into its own tab; drag and drop or the phone's photo picker, progress per file, and species picked while uploading (search in all three languages, applied to the batch or to one photo, new species added on the spot)
-- [ ] Map tab: unchanged apart from the new style
-- [ ] Empty states: a new account with no photos sees what each tab does and how to start, not a blank page
-- [ ] Polished README: a header with logo and badges (CI, license, latest release), screenshots of the new UI on desktop and phone (light and dark), a short feature tour, and a cleaner quick start; screenshots taken from the dev stack so they show real-looking data
-- [ ] Cleanup after Part 1 (code review, 2026-11-16):
+- [x] Page designs: mockups of every tab (Catalogue, Species, Upload, Map, Near me) and the photo detail, each in a wide-screen and a narrow-screen version, agreed before building them, see [plan 0007](docs/plans/0007-phase1.5-ui-overhaul-part1.md)
+- [x] Design foundation: a modern visual style (type, colors, spacing, light and dark themes) and a small set of shared components (buttons, cards, inputs, sheets, empty states) used by every page, see [plan 0007](docs/plans/0007-phase1.5-ui-overhaul-part1.md)
+- [x] Adaptive layout: the UI follows the screen it is on; wide screens get a desktop layout (sidebar or top navigation, multi-column pages, details beside the list), narrow screens a phone layout (bottom tab bar, single column, details as full-screen sheets, large touch targets); tabs **Catalogue**, **Species**, **Upload**, **Map** and **Near me**; a profile page opened from the account menu (in the sidebar or top bar on wide screens, behind an avatar on phones) holding account settings and logout, with room for the stats added in Phase 3, see [plan 0007](docs/plans/0007-phase1.5-ui-overhaul-part1.md)
+- [x] Catalogue tab: the current photo grid and filters in the new style, with room for the grouping added in Phase 2, see [plan 0008](docs/plans/0008-phase1.5-ui-overhaul-part2.md) §18
+- [x] Upload tab: uploading moves out of the catalogue into its own tab; drag and drop or the phone's photo picker, progress per file, and species picked while uploading (search in all three languages, applied to the batch or to one photo, new species added on the spot), see [plan 0008](docs/plans/0008-phase1.5-ui-overhaul-part2.md) §18
+- [x] Map tab: unchanged apart from the new style, see [plan 0007](docs/plans/0007-phase1.5-ui-overhaul-part1.md)
+- [x] Empty states: a new account with no photos sees what each tab does and how to start, not a blank page, see [plan 0008](docs/plans/0008-phase1.5-ui-overhaul-part2.md) §20
+- [x] Polished README: a header with logo and badges (CI, license; the release badge waits for a first release), screenshots of the new UI on desktop and phone (light and dark), a short feature tour, concepts and a cleaner quick start; screenshots taken from the dev stack with `scripts/screenshots.sh`, see [plan 0008](docs/plans/0008-phase1.5-ui-overhaul-part2.md) §21
+- [x] Cleanup after Part 1 (code review, 2026-11-16), done in [plan 0008](docs/plans/0008-phase1.5-ui-overhaul-part2.md) §15:
   - Phone safe area: the content's bottom padding (`pb-16` in `Layout.tsx`) and the map's height (`h-[calc(100dvh-7.5rem)]` in `MapPage.tsx`) leave out `env(safe-area-inset-bottom)`, which the bottom tab bar adds to its own height. On phones with a home indicator the bar covers the end of every page and the map's OpenStreetMap attribution. Take both from one bar-height value instead of repeating the numbers
   - `shadcn` devDependency: the app uses only its `shadcn/tailwind.css`, yet 208 of the 288 packages added to `package-lock.json` come only from it. Copy those rules into `index.css`, drop the dependency, and run the CLI with `npx shadcn@<version> add` when a component is needed. `components.json` also points `utils` at `@/lib/utils`, which doesn't exist
   - Unused shadcn code, kept only by direct tests in `ui.test.tsx`: `tooltip.tsx` (the rail shows labels instead), and the parts no page uses in `dropdown-menu` (checkbox, radio, sub-menu, shortcut, group, portal), `avatar` (image, group, badge), `card` (footer, action), `sheet` (trigger, close, header, footer, description) and `alert` (action). Remove them and their tests; `shadcn add` brings them back when a page needs them (plan 0007 §14 kept the copies whole; revisit that)
@@ -77,6 +78,7 @@ Make it fast and useful in the field.
 - [ ] Full-text search across notes, tags, locations and names
 - [ ] Compression and external storage (NAS, S3-compatible)
 - [ ] Batch and resumable uploads: several files per request, chunked transfer for large RAW files
+- [ ] RAW+JPEG pairs across uploads: a RAW uploaded after its JPEG (in a later batch, or after the JPEG was already stored as a photo of its own) joins it, the JPEG becoming the preview, instead of making a second photo
 - [ ] Admin role: browse and restore everyone's trash, change upload limits from the UI instead of the environment
 - [ ] Scheduled `purge-trash` inside Docker (compose sidecar or cron in the backend image) instead of a host cron job
 - [ ] Prebuilt Docker images: built and pushed to a registry by CI (amd64 and arm64), `image:` in docker-compose.yml so installs can `docker compose pull` instead of building
