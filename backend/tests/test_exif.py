@@ -32,6 +32,8 @@ def test_parse_maps_every_field():
         "taken_offset_minutes": 60,
         "taken_at": meta["taken_at"],
         "camera": "Canon EOS R5",
+        "camera_make": "Canon",
+        "camera_model": "EOS R5",
         "lens": "RF600mm F4 L IS USM",
         "iso": 800,
         "shutter_seconds": Decimal("0.002000"),
@@ -98,11 +100,29 @@ def test_iso_with_two_values():
     assert exif.parse({"ExifIFD:ISO": "800 800"})["iso"] == 800
 
 
-def test_camera_name_combines_make_and_model():
-    assert exif.parse({"IFD0:Make": "Canon", "IFD0:Model": "Canon EOS R5"})["camera"] == "Canon EOS R5"
-    assert exif.parse({"IFD0:Make": "Canon", "IFD0:Model": "EOS R5"})["camera"] == "Canon EOS R5"
-    assert exif.parse({"IFD0:Make": "Canon "})["camera"] == "Canon"
-    assert exif.parse({"IFD0:Model": "SM-G973U"})["camera"] == "SM-G973U"
+# (Make, Model) -> (brand, model, shown name); tests/test_migrations.py checks migration 0013 gives the same.
+CAMERAS = [
+    (("Canon", "Canon EOS R5"), ("Canon", "EOS R5", "Canon EOS R5")),
+    (("Canon", "EOS R5"), ("Canon", "EOS R5", "Canon EOS R5")),
+    (("NIKON CORPORATION", "NIKON Z 8"), ("Nikon", "Z 8", "Nikon Z 8")),
+    (("SONY", "ILCE-7M4"), ("Sony", "ILCE-7M4", "Sony ILCE-7M4")),
+    (("RICOH IMAGING COMPANY, LTD.", "PENTAX K-3 Mark III"), ("Pentax", "K-3 Mark III", "Pentax K-3 Mark III")),
+    (("OM Digital Solutions", "OM-1"), ("OM System", "OM-1", "OM System OM-1")),
+    (("Apple", "iPhone 15 Pro"), ("Apple", "iPhone 15 Pro", "Apple iPhone 15 Pro")),
+    (("Zeiss", "Zeiss ZX1"), ("Zeiss", "ZX1", "Zeiss ZX1")),  # unknown brand: Make as written
+    (("Canon ", None), ("Canon", None, "Canon")),
+    (("Canon", "Canon"), ("Canon", None, "Canon")),
+    ((None, "SM-G973U"), (None, "SM-G973U", "SM-G973U")),
+    ((None, "Canon EOS R5"), ("Canon", "EOS R5", "Canon EOS R5")),
+    (("  ", ""), (None, None, None)),
+]
+
+
+@pytest.mark.parametrize(("tags", "expected"), CAMERAS)
+def test_camera_brand_and_model(tags, expected):
+    make, model = tags
+    found = exif.parse({k: v for k, v in (("IFD0:Make", make), ("IFD0:Model", model)) if v is not None})
+    assert (found["camera_make"], found["camera_model"], found["camera"]) == expected
 
 
 def test_offset_derived_from_gps_when_the_camera_recorded_none():

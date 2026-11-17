@@ -99,12 +99,19 @@ def test_file_is_served_with_fallback(client):
 
 
 @pytest.mark.exiftool
-def test_list_filters_by_camera(client):
+def test_list_filters_by_camera_brand_and_model(client):
     upload(client, make_jpeg(camera="Canon EOS R5"))
     upload(client, make_jpeg(camera="Nikon Z9"))
+    upload(client, make_jpeg(camera="Nikon Z8"))
 
-    photos = client.get("/photos", params={"camera": "Nikon Z9"}).json()
-    assert [p["camera"] for p in photos] == ["Nikon Z9"]
+    def cameras(**params):
+        return sorted(p["camera"] for p in client.get("/photos", params=params).json())
+
+    assert cameras(camera_make="Nikon") == ["Nikon Z8", "Nikon Z9"]
+    assert cameras(camera_make="Nikon", camera_model="Z9") == ["Nikon Z9"]
+    assert cameras(camera_model="EOS R5") == ["Canon EOS R5"]
+    nikon = client.get("/photos", params={"camera_model": "Z8"}).json()[0]
+    assert (nikon["camera_make"], nikon["camera_model"]) == ("Nikon", "Z8")
 
 
 @pytest.mark.exiftool
@@ -142,8 +149,8 @@ def test_file_missing_on_disk(client):
 
 
 def test_assign_several_species(client):
-    heron = client.post("/species", json={"scientific_name": "Ardea cinerea"}).json()
-    stork = client.post("/species", json={"scientific_name": "Ciconia ciconia"}).json()
+    heron = client.post("/species", json={"scientific_name": "Ardea cinerea", "name_en": "Grey Heron"}).json()
+    stork = client.post("/species", json={"scientific_name": "Ciconia ciconia", "name_en": "White Stork"}).json()
     photo = upload(client).json()
 
     updated = client.patch(f"/photos/{photo['id']}", json={"species_ids": [stork["id"], heron["id"]]}).json()
@@ -291,7 +298,7 @@ def test_points_use_the_list_filters(client):
     upload(client, make_jpeg(camera="Canon EOS R5", lat=37.0, lon=-8.0, taken_at="2026:01:10 08:00:00"))
     nikon = upload(client, make_jpeg(camera="Nikon Z9", lat=38.0, lon=-9.0, taken_at="2026:06:10 08:00:00")).json()
 
-    assert [p["id"] for p in client.get("/photos/points", params={"camera": "Nikon Z9"}).json()] == [nikon["id"]]
+    assert [p["id"] for p in client.get("/photos/points", params={"camera_make": "Nikon"}).json()] == [nikon["id"]]
     from_march = client.get("/photos/points", params={"taken_from": "2026-03-01T00:00:00Z"}).json()
     assert [p["id"] for p in from_march] == [nikon["id"]]
 

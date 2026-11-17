@@ -89,7 +89,9 @@ class Photo(Base):
     taken_at_local: Mapped[datetime | None] = mapped_column(DateTime(timezone=False))
     taken_offset_minutes: Mapped[int | None] = mapped_column(SmallInteger)
     taken_at_manual: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
-    camera: Mapped[str | None] = mapped_column(String(200))
+    camera: Mapped[str | None] = mapped_column(String(200))  # brand and model, as shown
+    camera_make: Mapped[str | None] = mapped_column(String(100))  # the brand: Nikon, Canon
+    camera_model: Mapped[str | None] = mapped_column(String(200))  # without the brand: Z 8, EOS R5
     lens: Mapped[str | None] = mapped_column(String(200))
     iso: Mapped[int | None]
     shutter_seconds: Mapped[Decimal | None] = mapped_column(Numeric(10, 6))
@@ -116,6 +118,11 @@ class Photo(Base):
     def species_ids(self) -> list[int]:
         """Linked species, skipping those currently in the trash."""
         return [link.species_id for link in self.species_links if link.species.deleted_at is None]
+
+    @property
+    def species(self) -> list[Species]:
+        """The linked species themselves, in order, skipping those currently in the trash."""
+        return [link.species for link in self.species_links if link.species.deleted_at is None]
 
     @property
     def active_location_id(self) -> int | None:

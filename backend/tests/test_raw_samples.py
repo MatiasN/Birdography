@@ -55,9 +55,9 @@ def test_metadata_survived_shrinking(sample):
 
 # camera, lens, ISO, shutter, aperture, focal length, offset minutes; None where the file says 0 or '----'.
 EXPECTED_FIELDS = {
-    "nef": ("NIKON CORPORATION NIKON Z5_2", "NIKKOR Z 24-70mm f/4 S", 100, "0.002500", "7.1", "24.0", 120),
+    "nef": ("Nikon Z5_2", "NIKKOR Z 24-70mm f/4 S", 100, "0.002500", "7.1", "24.0", 120),
     "cr3": ("Canon EOS R6 Mark III", "RF50mm F1.4 L VCM", 100, "0.050000", "7.1", "50.0", -480),
-    "arw": ("SONY ILCE-7S", None, 400, "0.004000", None, None, None),
+    "arw": ("Sony ILCE-7S", None, 400, "0.004000", None, None, None),
     "dng": ("Canon EOS 5D Mark III", "EF70-200mm f/2.8L IS II USM", 200, "0.008000", "2.8", "70.0", None),
 }
 

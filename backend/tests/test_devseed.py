@@ -1,6 +1,7 @@
 import argparse
 import io
 import random
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -11,7 +12,7 @@ from app import exif, photos
 from app.auth import create_user, passwords
 from app.config import settings
 from app.db import engine
-from app.models import Photo, User
+from app.models import Photo, Species, User
 from devtools import seed
 from tests.conftest import stored
 
@@ -97,6 +98,16 @@ def test_photos_are_reproducible_and_follow_the_shares():
     assert all(abs(s.lat - s.hotspot.lat) < 0.09 for s in scattered)
 
 
+def test_species_per_photo_follow_the_shares_and_leave_the_rest_unchanged():
+    shots = [seed.shot(n, seed.hotspots(OPTIONS), OPTIONS) for n in range(1, 401)]
+    counts = [len(s.species) for s in shots]
+    assert 15 < counts.count(0) < 55  # 8% of 400
+    assert 25 < counts.count(2) < 75  # 12%
+    assert all(len(set(s.species)) == len(s.species) for s in shots)
+    assert {name for s in shots for name in s.species} <= {name for name, _, _ in seed.SPECIES}
+    assert seed.pick_species(7, OPTIONS.seed) == shots[6].species
+
+
 def test_scatter_wraps_longitude_and_clamps_latitude():
     rng = random.Random(1)
     points = [seed.scatter(rng, 84.99, 179.99, 50) for _ in range(200)]
@@ -168,6 +179,11 @@ def test_seeds_through_the_upload_path(dev, capsys):
     assert {f.kind for f in seeded[0].files} == {"original", "thumbnail"}
     assert seeded[0].files[0].original_filename == "dev-00001.jpg"
     assert seeded[0].camera
+    with Session(engine) as db:
+        names = {s.scientific_name: s for s in db.scalars(select(Species))}
+    assert len(names) == len(seed.SPECIES) and names["Alcedo atthis"].name_pt == "Guarda-rios"
+    expected = [list(seed.pick_species(n, 42)) for n in (1, 2, 3)]
+    assert [[names_by_id(names)[i] for i in p.species_ids] for p in seeded] == expected
     assert "now has 3 photos (3 added)" in capsys.readouterr().out
 
     run("--photos", "2", "--if-empty")
@@ -235,3 +251,18 @@ def test_brings_the_dev_account_back_to_the_configured_password(dev, capsys):
     run("--photos", "0")  # nothing to change the second time
     assert "Restored" not in capsys.readouterr().out
     assert Path(settings.upload_dir).exists()
+
+
+def names_by_id(species: dict) -> dict[int, str]:
+    return {s.id: name for name, s in species.items()}
+
+
+def test_existing_species_are_reused_and_trashed_ones_skipped(dev):
+    with Session(engine) as db:
+        db.add(Species(scientific_name="Alcedo atthis", name_en="Kingfisher (mine)"))
+        db.add(Species(scientific_name="Ardea cinerea", name_en="Grey Heron", deleted_at=datetime.now(UTC)))
+        db.commit()
+        found = seed.ensure_species(db)
+        kingfisher = db.scalar(select(Species).where(Species.scientific_name == "Alcedo atthis"))
+    assert kingfisher.name_en == "Kingfisher (mine)"  # not overwritten
+    assert "Ardea cinerea" not in found and len(found) == len(seed.SPECIES) - 1

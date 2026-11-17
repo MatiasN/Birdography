@@ -27,8 +27,8 @@ from app import derivatives, storage, timezones
 from app.auth import create_user, password_problem, passwords, set_password
 from app.cli import drop_root
 from app.db import engine
-from app.models import Photo, User
-from app.photos import DUPLICATE, Rejected, ingest
+from app.models import Photo, Species, User
+from app.photos import DUPLICATE, Rejected, ingest, species_links
 
 KM_PER_DEGREE = 111.32
 MAX_LAT = 85.0  # Web Mercator, what the map can show
@@ -46,6 +46,29 @@ CAMERAS = [
     ("SONY", "ILCE-7S", "FE 200-600mm F5.6-6.3 G OSS"),
     ("Canon", "Canon EOS 5D Mark III", "EF100-400mm f/4.5-5.6L IS II USM"),
 ]
+# Birds of Portugal with their English, Portuguese and scientific names, for the species filter and screenshots.
+SPECIES = [
+    ("Alcedo atthis", "Common Kingfisher", "Guarda-rios"),
+    ("Ardea cinerea", "Grey Heron", "Garça-real"),
+    ("Egretta garzetta", "Little Egret", "Garça-branca-pequena"),
+    ("Ciconia ciconia", "White Stork", "Cegonha-branca"),
+    ("Himantopus himantopus", "Black-winged Stilt", "Pernilongo"),
+    ("Platalea leucorodia", "Eurasian Spoonbill", "Colhereiro"),
+    ("Phoenicopterus roseus", "Greater Flamingo", "Flamingo"),
+    ("Merops apiaster", "European Bee-eater", "Abelharuco"),
+    ("Cyanopica cooki", "Iberian Magpie", "Charneco"),
+    ("Upupa epops", "Eurasian Hoopoe", "Poupa"),
+    ("Curruca melanocephala", "Sardinian Warbler", "Toutinegra-de-cabeça-preta"),
+    ("Erithacus rubecula", "European Robin", "Pisco-de-peito-ruivo"),
+    ("Milvus migrans", "Black Kite", "Milhafre-preto"),
+    ("Circaetus gallicus", "Short-toed Snake Eagle", "Águia-cobreira"),
+    ("Falco tinnunculus", "Common Kestrel", "Peneireiro"),
+    ("Larus michahellis", "Yellow-legged Gull", "Gaivota-de-patas-amarelas"),
+    ("Pandion haliaetus", "Osprey", "Águia-pesqueira"),
+    ("Coracias garrulus", "European Roller", "Rolieiro"),
+]
+NO_SPECIES_PCT = 8  # photos still to identify
+TWO_SPECIES_PCT = 12
 PALETTE = ["#1b4332", "#2d6a4f", "#40916c", "#1d3557", "#457b9d", "#6d597a", "#b56576", "#e07a5f", "#3d405b"]
 
 
@@ -85,6 +108,7 @@ class Shot:
     exposure: tuple[int, int]
     fnumber: tuple[int, int]
     focal_length: int
+    species: tuple[str, ...] = ()  # scientific names, from SPECIES
 
 
 def parse_region(value: str) -> tuple[float, float, float, float]:
@@ -144,7 +168,28 @@ def shot(number: int, spots: list[Hotspot], options: Options) -> Shot:
         exposure=(1, rng.choice([250, 500, 1000, 1600, 2000, 3200])),
         fnumber=rng.choice([(56, 10), (63, 10), (71, 10), (8, 1)]),
         focal_length=rng.choice([300, 400, 500, 600]),
+        species=pick_species(number, options.seed),
     )
+
+
+def pick_species(number: int, seed: int) -> tuple[str, ...]:
+    """None, one or two species for photo `number`. A stream of its own, so the rest of the shot stays as it was."""
+    rng = random.Random(f"{seed}:species:{number}")
+    roll = rng.uniform(0, 100)
+    count = 0 if roll < NO_SPECIES_PCT else 2 if roll < NO_SPECIES_PCT + TWO_SPECIES_PCT else 1
+    return tuple(name for name, _, _ in rng.sample(SPECIES, count))
+
+
+def ensure_species(db: Session) -> dict[str, int]:
+    """Every species of SPECIES, by scientific name -> id, created when missing. Species are shared by all accounts,
+    so existing ones are left as they are; one in the trash is skipped rather than restored."""
+    have = {s.scientific_name: s for s in db.scalars(select(Species))}
+    for scientific, en, pt in SPECIES:
+        if scientific not in have:
+            have[scientific] = Species(scientific_name=scientific, name_en=en, name_pt=pt)
+            db.add(have[scientific])
+    db.commit()
+    return {name: s.id for name, s in have.items() if s.deleted_at is None}
 
 
 def scatter(rng: random.Random, lat: float, lon: float, spread_km: float) -> tuple[float, float]:
@@ -236,19 +281,22 @@ def remove_photos(db: Session, user: User) -> int:
 def seed(db: Session, user: User, options: Options, out=sys.stdout) -> int:
     """Add `options.photos` photos to the user's catalog, continuing after the ones already there."""
     spots = hotspots(options)
+    species = ensure_species(db)
     number = photo_count(db, user)
     added = 0
     while added < options.photos:
         number += 1
         item = shot(number, spots, options)
         try:
-            photo, inline = ingest(db, user, io.BytesIO(jpeg(item, options.image_px)), f"dev-{number:05d}.jpg")
+            links = species_links(db, [species[name] for name in item.species if name in species])
+            data = io.BytesIO(jpeg(item, options.image_px))
+            stored = ingest(db, user, data, f"dev-{number:05d}.jpg", links)
         except Rejected as err:
             if err.detail == DUPLICATE:  # this number exists already (photos deleted in between): take the next
                 continue
             raise
-        if not inline:
-            derivatives.process(photo.id)
+        if not stored.inline:
+            derivatives.process(stored.photo.id)
         added += 1
         if added % 25 == 0 or added == options.photos:
             print(f"  {added}/{options.photos} photos", file=out, flush=True)

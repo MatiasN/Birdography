@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 
 import pytest
@@ -11,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from app.db import engine
 from app.models import Base
 from app.schema import compare_options
+from tests.test_exif import CAMERAS
 
 cfg = Config("alembic.ini")
 
@@ -136,3 +138,35 @@ def test_naming_convention_migration_round_trip():
     command.upgrade(cfg, "head")
     assert not LEGACY_NAMES & _constraint_names()
     test_models_match_migrations()
+
+
+def test_camera_make_model_backfill_matches_the_python():
+    """0013 fills brand and model from the stored EXIF in SQL; it must agree with `exif.camera()` on every case
+    `test_exif.CAMERAS` lists. A photo whose tags name no camera keeps its value."""
+    command.downgrade(cfg, "0012")
+    ids = []
+    with engine.begin() as conn:
+        owner = conn.scalar(text("INSERT INTO users (email, password_hash) VALUES ('m@x.org', 'h') RETURNING id"))
+        for (make, model), _ in CAMERAS:
+            tags = {k: v for k, v in (("IFD0:Make", make), ("IFD0:Model", model)) if v is not None}
+            ids.append(
+                conn.scalar(
+                    text("INSERT INTO photos (owner_id, camera, exif) VALUES (:o, 'old', :e) RETURNING id"),
+                    {"o": owner, "e": json.dumps(tags)},
+                )
+            )
+        untouched = conn.scalar(
+            text("INSERT INTO photos (owner_id, camera, exif) VALUES (:o, 'kept', '{}') RETURNING id"), {"o": owner}
+        )
+
+    command.upgrade(cfg, "head")
+    with engine.connect() as conn:
+        rows = dict(
+            (row.id, (row.camera_make, row.camera_model, row.camera))
+            for row in conn.execute(text("SELECT id, camera_make, camera_model, camera FROM photos"))
+        )
+    assert [rows[i] for i in ids] == [expected for _, expected in CAMERAS]
+    assert rows[untouched] == (None, None, "kept")
+
+    command.downgrade(cfg, "0012")
+    command.upgrade(cfg, "head")

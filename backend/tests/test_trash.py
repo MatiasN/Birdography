@@ -20,7 +20,7 @@ def test_purge_removes_only_expired_rows_and_their_files(client):
     kept = upload(client)
     trashed = upload(client)
     client.delete(f"/photos/{trashed['id']}")
-    species = client.post("/species", json={"scientific_name": "Ardea cinerea"}).json()
+    species = client.post("/species", json={"scientific_name": "Ardea cinerea", "name_en": "Grey Heron"}).json()
     client.delete(f"/species/{species['id']}")
     location = client.post("/locations", json={"name": "Home", "lat": 0, "lon": 0}).json()
     client.delete(f"/locations/{location['id']}")

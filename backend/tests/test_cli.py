@@ -79,7 +79,7 @@ def test_restore_user(monkeypatch, capsys, client):
 
 
 def test_restore(monkeypatch, capsys, client):
-    species = client.post("/species", json={"scientific_name": "Ardea cinerea"}).json()
+    species = client.post("/species", json={"scientific_name": "Ardea cinerea", "name_en": "Grey Heron"}).json()
     client.delete(f"/species/{species['id']}")
     assert (
         run(monkeypatch, capsys, "restore", "species", str(species["id"])).strip()

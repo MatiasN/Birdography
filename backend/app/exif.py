@@ -20,7 +20,16 @@ from app import exiftool, timezones
 DROPPED_GROUPS = ("System:", "ExifTool:")
 Position = tuple[float, float]  # lat, lon
 TAKEN_FIELDS = ("taken_at_local", "taken_offset_minutes", "taken_at")
-CAMERA_FIELDS = ("camera", "lens", "iso", "shutter_seconds", "aperture", "focal_length_mm")
+CAMERA_FIELDS = (
+    "camera",
+    "camera_make",
+    "camera_model",
+    "lens",
+    "iso",
+    "shutter_seconds",
+    "aperture",
+    "focal_length_mm",
+)
 
 
 def read(path: Path, position: Position | None = None) -> dict:
@@ -53,7 +62,7 @@ def parse(tags: dict, position: Position | None = None) -> dict:
         "taken_at_local": local,
         "taken_offset_minutes": offset,
         "taken_at": instant(local, offset),
-        "camera": _camera(tags.get("IFD0:Make"), tags.get("IFD0:Model")),
+        **camera(tags.get("IFD0:Make"), tags.get("IFD0:Model")),
         "lens": _lens(_first(tags, *lens_keys)),
         "iso": _int(tags.get("ExifIFD:ISO")),
         "shutter_seconds": _decimal(tags.get("ExifIFD:ExposureTime"), places=6),
@@ -149,11 +158,51 @@ def _offset_minutes(value):
     return -minutes if value[0] == "-" else minutes
 
 
-def _camera(make, model):
-    make, model = (str(make).strip() if make else None, str(model).strip() if model else None)
-    if model and make and not model.startswith(make):
-        return f"{make} {model}"
-    return model or make or None
+# Brand names as people write them, keyed by the first word of EXIF Make (or of Model, which often starts with the
+# brand): "NIKON CORPORATION" -> Nikon. Migration 0013 holds a frozen copy for photos stored before it.
+BRANDS = {
+    "APPLE": "Apple",
+    "CANON": "Canon",
+    "DJI": "DJI",
+    "FUJIFILM": "Fujifilm",
+    "GOOGLE": "Google",
+    "HASSELBLAD": "Hasselblad",
+    "HUAWEI": "Huawei",
+    "LEICA": "Leica",
+    "NIKON": "Nikon",
+    "OLYMPUS": "Olympus",
+    "OM": "OM System",
+    "ONEPLUS": "OnePlus",
+    "PANASONIC": "Panasonic",
+    "PENTAX": "Pentax",
+    "RICOH": "Ricoh",
+    "SAMSUNG": "Samsung",
+    "SIGMA": "Sigma",
+    "SONY": "Sony",
+    "XIAOMI": "Xiaomi",
+}
+
+
+def camera(make, model) -> dict:
+    """Brand, model and the name shown for them: ("NIKON CORPORATION", "NIKON Z 8") -> Nikon, Z 8, "Nikon Z 8".
+
+    A known brand at the start of the model wins over Make (Ricoh writes Make "RICOH IMAGING COMPANY, LTD." for
+    its Pentax cameras, whose model is "PENTAX K-3 Mark III"), and the brand is dropped from the model.
+    """
+    make, model = (str(value).strip() or None if value is not None else None for value in (make, model))
+    make_word = make.split(" ", 1)[0].upper() if make else None
+    model_word = model.split(" ", 1)[0].upper() if model else None
+    if model_word in BRANDS:
+        brand = BRANDS[model_word]
+    else:
+        brand = BRANDS.get(make_word, make) if make else None
+    if model and (model_word in BRANDS or model_word == make_word):
+        model = model[len(model_word) :].strip() or None
+    return {
+        "camera": " ".join(part for part in (brand, model) if part) or None,
+        "camera_make": brand,
+        "camera_model": model,
+    }
 
 
 def _lens(value):
@@ -200,3 +249,31 @@ def _float(value):
         return float(value) if value not in (None, "") else None
     except TypeError, ValueError:
         return None
+
+
+def pair_warning(raw_tags: dict, jpeg_tags: dict) -> str | None:
+    """Why a camera JPEG uploaded with a RAW might not be the same shot, or None when it looks right.
+
+    A camera writes the same DateTimeOriginal (and sub-second part), Make and Model into both files of a pair;
+    a JPEG from another moment or another body is somebody else's picture. Without a date on both sides there
+    is nothing to compare, which is said as well, since the pair is stored anyway.
+    """
+    raw_time = _first(raw_tags, "ExifIFD:DateTimeOriginal", "ExifIFD:CreateDate")
+    jpeg_time = _first(jpeg_tags, "ExifIFD:DateTimeOriginal", "ExifIFD:CreateDate")
+    if _local_time(raw_time) is None or _local_time(jpeg_time) is None:
+        missing = "RAW" if _local_time(raw_time) is None else "JPEG"
+        return f"Couldn't confirm the JPEG belongs to this RAW: the {missing} has no date"
+    if raw_time[:19] != jpeg_time[:19]:
+        return f"The JPEG may not belong to this RAW: taken at {jpeg_time[11:19]}, the RAW at {raw_time[11:19]}"
+    raw_sub, jpeg_sub = raw_tags.get("ExifIFD:SubSecTimeOriginal"), jpeg_tags.get("ExifIFD:SubSecTimeOriginal")
+    if raw_sub not in (None, "") and jpeg_sub not in (None, "") and str(raw_sub) != str(jpeg_sub):
+        return "The JPEG may not belong to this RAW: taken the same second, but not at the same instant"
+    # Brand and model each count only when both files have them: a JPEG missing one isn't another camera.
+    raw_camera, jpeg_camera = (camera(t.get("IFD0:Make"), t.get("IFD0:Model")) for t in (raw_tags, jpeg_tags))
+    for part in ("camera_make", "camera_model"):
+        if raw_camera[part] and jpeg_camera[part] and raw_camera[part] != jpeg_camera[part]:
+            return (
+                f"The JPEG may not belong to this RAW: taken with a {jpeg_camera['camera']}, "
+                f"the RAW with a {raw_camera['camera']}"
+            )
+    return None

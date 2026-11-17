@@ -71,6 +71,12 @@ def extract_preview(src: Path, dest: Path) -> bool:
     return True
 
 
+def strip_metadata(path: Path) -> None:
+    """Drop every tag of a JPEG in place, then copy its orientation back, as `extract_preview` does for embedded
+    previews: a camera JPEG served as a preview must not carry the GPS position or serial numbers."""
+    _run("-all=", "-tagsfromfile", "@", "-Orientation", "-overwrite_original", "--", str(path))
+
+
 def metadata(path: Path) -> dict:
     """All tags with group-1 prefixes (`EXIF:DateTimeOriginal`, `GPS:GPSLatitude`), numeric values unconverted."""
     (row,) = json.loads(_run("-j", "-n", "-G1", "--", str(path)))
