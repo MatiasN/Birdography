@@ -4,13 +4,13 @@ version = "0.1.0"
 requires-python = ">=3.15"
 dependencies = [
     "alembic>=1.14",
-    "fastapi>=0.162.3",
+    "fastapi>=0.163.1",
     "geoalchemy2>=0.21.0",
     "pillow>=13.0.0",
     "pillow-heif>=1.8.1",
     "psycopg[binary]>=3.3.8",
     "pwdlib[argon2]>=0.3.1",
-    "pydantic-settings>=2.6",
+    "pydantic-settings>=2.16.3",
     "pyjwt>=2.15.1",
     "python-multipart>=0.0.33",
     "sqlalchemy>=2.1.8",
@@ -24,7 +24,7 @@ dev = [
     "httpx>=0.28",
     "pytest>=8",
     "pytest-cov>=7.1.0",
-    "ruff>=0.17.4",
+    "ruff>=0.17.5",
 ]
 
 [tool.uv]
