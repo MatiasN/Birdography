@@ -46,7 +46,7 @@ scripts/dev.sh up
 ```
 
 Open http://localhost:3001 and log in as `dev@birdography.local` / `birdography-dev`. The first run builds the
-images and generates about 300 photos (a minute or so); later runs start in seconds and keep your data. Needs
+images and generates about 100 photos (a minute or so); later runs start in seconds and keep your data. Needs
 Docker with Compose and bash; Node.js only for `--vite`. No `.env` needed: the script generates its own secrets.
 
 | Command | |
@@ -72,7 +72,7 @@ Options of `up` and `reset`. They are saved to `.dev/config.env`, so later comma
 | `--auto-ports` | | move each port that is taken to the next free one, instead of stopping |
 | `--user EMAIL` | `dev@birdography.local` | dev login |
 | `--password PASSWORD` | `birdography-dev` | at least 10 characters |
-| `--photos N` | 300 | photos to seed into an empty account; 0 for none |
+| `--photos N` | 100 | photos to seed into an empty account; 0 for none |
 | `--region NAME` | `portugal` | where hotspots are: `portugal`, `iberia`, `europe`, `world`, or a box `lat1,lon1,lat2,lon2` |
 | `--hotspots N` | 15 | spots photos gather around, a few busy and many quiet |
 | `--same-spot-pct N` | 5 | % of photos exactly on one of the 3 busiest hotspots, which never split on the map |
@@ -109,12 +109,14 @@ The file is also the backend's env file, so any backend setting from [Settings](
 quotes or spaces. Delete the file to go back to the defaults; delete `.dev/` entirely, after `scripts/dev.sh down
 --volumes`, to remove every trace.
 
-**The photos.** Each one is a JPEG generated on the spot: a gradient in its hotspot's colours with the photo's
-number and spot on it, and EXIF with GPS, date, camera, lens and exposure. Cameras are the bodies of the RAW test
+**The photos.** Each one is a JPEG made on the spot from one of the 14 real bird photos in
+`backend/devtools/samples/` (credits in its `CREDITS.md`): a random crop, sometimes mirrored, tagged with the
+species it shows (about 8% are left untagged, to identify), with EXIF for GPS, date, camera, lens and exposure. The
+photo's number is in its file name (`dev-00137.jpg`) and EXIF description. Cameras are the bodies of the RAW test
 fixtures, so the camera filter has choices. About half record their UTC offset; the others get it from their
 position, as photos from older cameras do. They go through the same code as an upload (`photos.ingest`), so
 metadata, time zones and thumbnails are what a real upload would give. Photo number *n* is always the same image at
-the same place for a given `SEED_RANDOM`, which helps reproduce a bug. Expect about 0.2 s and 60 KB per photo.
+the same place for a given `SEED_RANDOM`, which helps reproduce a bug. Expect about 0.2 s and 200 KB per photo.
 
 **Isolation and safety.** The dev stack has its own Compose project, database volume, settings file and photo
 folder, and publishes only on `127.0.0.1` by default, so it never touches a real install's `.env`, `db-data` or

@@ -7,7 +7,7 @@ of your choice, without touching a real install on the same machine. How to use 
 stack](../../CONTRIBUTING.md#dev-stack).
 
 ```bash
-scripts/dev.sh up                         # start, create the dev user, seed 300 photos the first time
+scripts/dev.sh up                         # start, create the dev user, seed 100 photos the first time
 scripts/dev.sh up --photos 2000 --http-port 3005
 scripts/dev.sh up --vite                  # frontend with hot reload instead of the nginx build
 scripts/dev.sh reset                      # throw everything away and seed again

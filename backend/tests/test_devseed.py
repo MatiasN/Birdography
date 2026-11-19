@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -98,14 +99,45 @@ def test_photos_are_reproducible_and_follow_the_shares():
     assert all(abs(s.lat - s.hotspot.lat) < 0.09 for s in scattered)
 
 
-def test_species_per_photo_follow_the_shares_and_leave_the_rest_unchanged():
+def test_every_sample_is_there_with_its_credit():
+    files = {p.name for p in seed.SAMPLES_DIR.glob("*.jpg")}
+    assert files == set(seed.SAMPLES)
+    credits = (seed.SAMPLES_DIR / "CREDITS.md").read_text()
+    assert all(f"`{name}`" in credits for name in files)
+    assert len({s.ebird_code for s in seed.SPECIES}) == len({s.scientific_name for s in seed.SPECIES}) == 13
+
+
+def test_photos_are_tagged_with_the_species_their_sample_shows():
     shots = [seed.shot(n, seed.hotspots(OPTIONS), OPTIONS) for n in range(1, 401)]
-    counts = [len(s.species) for s in shots]
-    assert 15 < counts.count(0) < 55  # 8% of 400
-    assert 25 < counts.count(2) < 75  # 12%
-    assert all(len(set(s.species)) == len(s.species) for s in shots)
-    assert {name for s in shots for name in s.species} <= {name for name, _, _ in seed.SPECIES}
-    assert seed.pick_species(7, OPTIONS.seed) == shots[6].species
+    untagged = [s for s in shots if not s.species]
+    assert 15 < len(untagged) < 55  # 8% of 400
+    assert all(s.species == (seed.SAMPLES[s.sample].scientific_name,) for s in shots if s.species)
+    assert {s.sample for s in shots} == set(seed.SAMPLES)
+    assert 150 < sum(s.mirror for s in shots) < 250
+    for s in shots:
+        left, top, right, bottom = s.crop
+        assert 0 <= left < right <= 1 and 0 <= top < bottom <= 1
+        assert right - left >= seed.MIN_CROP and bottom - top >= seed.MIN_CROP
+
+
+def test_the_sample_leaves_the_rest_of_the_shot_unchanged():
+    spots = seed.hotspots(OPTIONS)
+    shot = seed.shot(7, spots, OPTIONS)
+    picked = seed.pick_sample(7, OPTIONS.seed)
+    assert (shot.sample, shot.crop, shot.mirror, shot.species) == tuple(picked.values())
+    assert seed.pick_sample(7, OPTIONS.seed + 1) != picked
+
+
+def test_jpeg_keeps_the_crop_shape_on_the_long_edge():
+    spots = seed.hotspots(OPTIONS)
+    shots = [seed.shot(n, spots, OPTIONS) for n in range(1, 60)]
+    portrait = next(s for s in shots if s.sample.startswith("tim_bastian-stork"))
+    full = seed.Shot(**{**portrait.__dict__, "crop": (0.0, 0.0, 1.0, 1.0), "mirror": True})
+    with Image.open(io.BytesIO(seed.jpeg(full, 300))) as image:
+        assert image.size == (200, 300)  # the sample is 1280x1920
+    for s in shots[:5]:
+        with Image.open(io.BytesIO(seed.jpeg(s, 120))) as image:
+            assert max(image.size) == 120
 
 
 def test_scatter_wraps_longitude_and_clamps_latitude():
@@ -181,8 +213,11 @@ def test_seeds_through_the_upload_path(dev, capsys):
     assert seeded[0].camera
     with Session(engine) as db:
         names = {s.scientific_name: s for s in db.scalars(select(Species))}
-    assert len(names) == len(seed.SPECIES) and names["Alcedo atthis"].name_pt == "Guarda-rios"
-    expected = [list(seed.pick_species(n, 42)) for n in (1, 2, 3)]
+    assert len(names) == len(seed.SPECIES)
+    kingfisher = names["Alcedo atthis"]
+    assert (kingfisher.name_pt, kingfisher.ebird_code, kingfisher.family) == ("Guarda-rios", "comkin1", "Alcedinidae")
+    assert kingfisher.taxon_order == 9981
+    expected = [list(seed.pick_sample(n, 42)["species"]) for n in (1, 2, 3)]
     assert [[names_by_id(names)[i] for i in p.species_ids] for p in seeded] == expected
     assert "now has 3 photos (3 added)" in capsys.readouterr().out
 
@@ -261,8 +296,11 @@ def test_existing_species_are_reused_and_trashed_ones_skipped(dev):
     with Session(engine) as db:
         db.add(Species(scientific_name="Alcedo atthis", name_en="Kingfisher (mine)"))
         db.add(Species(scientific_name="Ardea cinerea", name_en="Grey Heron", deleted_at=datetime.now(UTC)))
+        db.add(Species(scientific_name="Cygnus olor x", name_en="Renamed in eBird", ebird_code="whoswa"))
         db.commit()
         found = seed.ensure_species(db)
         kingfisher = db.scalar(select(Species).where(Species.scientific_name == "Alcedo atthis"))
+        count = db.query(Species).count()
     assert kingfisher.name_en == "Kingfisher (mine)"  # not overwritten
     assert "Ardea cinerea" not in found and len(found) == len(seed.SPECIES) - 1
+    assert count == len(seed.SPECIES)  # the swan was found by its eBird code, not added again

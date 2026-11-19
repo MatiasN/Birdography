@@ -30,7 +30,7 @@ Options of up and reset (saved to .dev/config.env, so later runs keep them)
   --auto-ports             move any port that is taken to the next free one instead of stopping
   --user EMAIL             dev login (default dev@birdography.local)
   --password PASSWORD      at least 10 characters (default birdography-dev)
-  --photos N               photos to seed into an empty account (default 300)
+  --photos N               photos to seed into an empty account (default 100)
   --region NAME|BOX        portugal (default), iberia, europe, world, or lat1,lon1,lat2,lon2
   --hotspots N             spots photos gather around (default 15)
   --same-spot-pct N        % of photos exactly on a hotspot, which never split on the map (default 5)
@@ -85,7 +85,7 @@ DEV_USER_EMAIL=dev@birdography.local
 DEV_USER_PASSWORD=birdography-dev
 
 # Seed photos
-SEED_PHOTOS=300
+SEED_PHOTOS=100
 SEED_REGION=portugal
 SEED_HOTSPOTS=15
 SEED_SAME_SPOT_PCT=5
@@ -124,7 +124,7 @@ load_config() {
     : "${DEV_MODE:=docker}" "${DEV_DATA_DIR:=.dev/photos}" "${DEV_HTTP_PORT:=3001}" "${DEV_API_PORT:=8001}"
     : "${DEV_DB_PORT:=5433}" "${DEV_VITE_PORT:=5174}" "${DEV_BIND_ADDRESS:=127.0.0.1}" "${DEV_PROJECT:=$(default_project)}"
     : "${DEV_USER_EMAIL:=dev@birdography.local}" "${DEV_USER_PASSWORD:=birdography-dev}"
-    : "${SEED_PHOTOS:=300}" "${SEED_REGION:=portugal}" "${SEED_HOTSPOTS:=15}" "${SEED_SAME_SPOT_PCT:=5}"
+    : "${SEED_PHOTOS:=100}" "${SEED_REGION:=portugal}" "${SEED_HOTSPOTS:=15}" "${SEED_SAME_SPOT_PCT:=5}"
     : "${SEED_SPREAD_KM:=1.5}" "${SEED_NO_GPS_PCT:=5}" "${SEED_YEARS:=3}" "${SEED_IMAGE_PX:=1600}" "${SEED_RANDOM:=42}"
 }
 

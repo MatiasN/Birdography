@@ -1,12 +1,14 @@
-"""Seed a development stack with a known account and generated photos spread over a map.
+"""Seed a development stack with a known account and photos of real birds spread over a map.
 
 Run by `scripts/dev.sh` inside the backend container (`python -m devtools.seed`), never in production: it refuses
 to start unless BIRDOGRAPHY_DEV=1, which only compose.dev.yml sets. The password comes from DEV_USER_PASSWORD so
 it doesn't show in the process list.
 
-Photos go through `photos.ingest`, the same path as `POST /photos`, so their metadata, time zones and thumbnails
-are what a real upload of the same JPEG would give. Photo number n is always the same image at the same spot for a
-given `--seed`, so a bug seen on photo 137 can be reproduced; adding more continues the numbering.
+Each photo is a crop of one of the sample photos in `samples/` (credits in `samples/CREDITS.md`), tagged with the
+species it shows, with generated EXIF (position, time, camera). Photos go through `photos.ingest`, the same path as
+`POST /photos`, so their metadata, time zones and thumbnails are what a real upload of the same JPEG would give.
+Photo number n is always the same image at the same spot for a given `--seed`, so a bug seen on photo 137 can be
+reproduced (its number is in the file name and the EXIF description); adding more continues the numbering.
 """
 
 import argparse
@@ -17,8 +19,11 @@ import random
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from decimal import Decimal
+from functools import cache
+from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont, ImageOps
+from PIL import Image, ImageOps
 from PIL.TiffImagePlugin import IFDRational
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -46,30 +51,77 @@ CAMERAS = [
     ("SONY", "ILCE-7S", "FE 200-600mm F5.6-6.3 G OSS"),
     ("Canon", "Canon EOS 5D Mark III", "EF100-400mm f/4.5-5.6L IS II USM"),
 ]
-# Birds of Portugal with their English, Portuguese and scientific names, for the species filter and screenshots.
-SPECIES = [
-    ("Alcedo atthis", "Common Kingfisher", "Guarda-rios"),
-    ("Ardea cinerea", "Grey Heron", "Garça-real"),
-    ("Egretta garzetta", "Little Egret", "Garça-branca-pequena"),
-    ("Ciconia ciconia", "White Stork", "Cegonha-branca"),
-    ("Himantopus himantopus", "Black-winged Stilt", "Pernilongo"),
-    ("Platalea leucorodia", "Eurasian Spoonbill", "Colhereiro"),
-    ("Phoenicopterus roseus", "Greater Flamingo", "Flamingo"),
-    ("Merops apiaster", "European Bee-eater", "Abelharuco"),
-    ("Cyanopica cooki", "Iberian Magpie", "Charneco"),
-    ("Upupa epops", "Eurasian Hoopoe", "Poupa"),
-    ("Curruca melanocephala", "Sardinian Warbler", "Toutinegra-de-cabeça-preta"),
-    ("Erithacus rubecula", "European Robin", "Pisco-de-peito-ruivo"),
-    ("Milvus migrans", "Black Kite", "Milhafre-preto"),
-    ("Circaetus gallicus", "Short-toed Snake Eagle", "Águia-cobreira"),
-    ("Falco tinnunculus", "Common Kestrel", "Peneireiro"),
-    ("Larus michahellis", "Yellow-legged Gull", "Gaivota-de-patas-amarelas"),
-    ("Pandion haliaetus", "Osprey", "Águia-pesqueira"),
-    ("Coracias garrulus", "European Roller", "Rolieiro"),
-]
+SAMPLES_DIR = Path(__file__).parent / "samples"
+
+
+@dataclass(frozen=True)
+class SampleSpecies:
+    """A species as the eBird taxonomy gives it (2026, English UK and Portuguese PT names)."""
+
+    ebird_code: str
+    scientific_name: str
+    name_en: str
+    name_pt: str
+    family: str
+    order_name: str
+    taxon_order: int
+
+
+HERON = SampleSpecies("graher1", "Ardea cinerea", "Grey Heron", "Garça-real", "Ardeidae", "Pelecaniformes", 7803)
+CORMORANT = SampleSpecies(
+    "grecor", "Phalacrocorax carbo", "Great Cormorant", "Corvo-marinho-comum", "Phalacrocoracidae", "Suliformes", 7452
+)
+WREN = SampleSpecies(
+    "winwre4", "Nannus troglodytes", "Eurasian Wren", "Carriça", "Troglodytidae", "Passeriformes", 27418
+)
+CRESTED_TIT = SampleSpecies(
+    "cretit2", "Lophophanes cristatus", "Crested Tit", "Chapim-de-poupa", "Paridae", "Passeriformes", 22093
+)
+ROBIN = SampleSpecies(
+    "eurrob1", "Erithacus rubecula", "European Robin", "Pisco-de-peito-ruivo", "Muscicapidae", "Passeriformes", 29444
+)
+CHAFFINCH = SampleSpecies(
+    "comcha", "Fringilla coelebs", "Common Chaffinch", "Tentilhão", "Fringillidae", "Passeriformes", 32187
+)
+SWAN = SampleSpecies("whoswa", "Cygnus cygnus", "Whooper Swan", "Cisne-bravo", "Anatidae", "Anseriformes", 396)
+BLUE_TIT = SampleSpecies(
+    "blutit", "Cyanistes caeruleus", "Eurasian Blue Tit", "Chapim-azul", "Paridae", "Passeriformes", 22213
+)
+SPARROW = SampleSpecies(
+    "houspa", "Passer domesticus", "House Sparrow", "Pardal-do-telhado", "Passeridae", "Passeriformes", 31772
+)
+LONG_TAILED_TIT = SampleSpecies(
+    "lottit1", "Aegithalos caudatus", "Long-tailed Tit", "Chapim-rabilongo", "Aegithalidae", "Passeriformes", 25319
+)
+KINGFISHER = SampleSpecies(
+    "comkin1", "Alcedo atthis", "Common Kingfisher", "Guarda-rios", "Alcedinidae", "Coraciiformes", 9981
+)
+STORK = SampleSpecies(
+    "whisto1", "Ciconia ciconia", "White Stork", "Cegonha-branca", "Ciconiidae", "Ciconiiformes", 7346
+)
+VULTURE = SampleSpecies(
+    "egyvul1", "Neophron percnopterus", "Egyptian Vulture", "Britango", "Accipitridae", "Accipitriformes", 7920
+)
+# The photos in samples/ and the species each shows.
+SAMPLES = {
+    "arminep-grey-heron-8030000_1920.jpg": HERON,
+    "bernhardjaeck-cormorant-9455109_1920.jpg": CORMORANT,
+    "dienaturreise-wren-6002068_1920.jpg": WREN,
+    "erik_karits-european-crested-tit-7575701_1920.jpg": CRESTED_TIT,
+    "gruendercoach-robin-9361610_1920.jpg": ROBIN,
+    "juergen57bs-chaffinch-9494979_1920.jpg": CHAFFINCH,
+    "lancier-swan-7606921_1920.jpg": SWAN,
+    "max_gindele_photography-blue-tit-8024809_1920.jpg": BLUE_TIT,
+    "netti_nu_nu-robin-6906521_1920.jpg": ROBIN,
+    "schauhi-sparrow-6300790_1920.jpg": SPARROW,
+    "sharkolot-long-tailed-tit-7803007_1920.jpg": LONG_TAILED_TIT,
+    "taligar-kingfisher-1905255_1920.jpg": KINGFISHER,
+    "tim_bastian-stork-8618904_1920.jpg": STORK,
+    "wildfaces-egyptian-vulture-1336359_1920.jpg": VULTURE,
+}
+SPECIES = list(dict.fromkeys(SAMPLES.values()))  # each once, in the order above
 NO_SPECIES_PCT = 8  # photos still to identify
-TWO_SPECIES_PCT = 12
-PALETTE = ["#1b4332", "#2d6a4f", "#40916c", "#1d3557", "#457b9d", "#6d597a", "#b56576", "#e07a5f", "#3d405b"]
+MIN_CROP = 0.75  # each side keeps at least this share of the sample
 
 
 @dataclass(frozen=True)
@@ -108,7 +160,10 @@ class Shot:
     exposure: tuple[int, int]
     fnumber: tuple[int, int]
     focal_length: int
-    species: tuple[str, ...] = ()  # scientific names, from SPECIES
+    sample: str  # file in samples/
+    crop: tuple[float, float, float, float]  # left, top, right, bottom, as shares of the sample's size
+    mirror: bool
+    species: tuple[str, ...] = ()  # scientific names: the sample's species, or none while "to identify"
 
 
 def parse_region(value: str) -> tuple[float, float, float, float]:
@@ -168,28 +223,43 @@ def shot(number: int, spots: list[Hotspot], options: Options) -> Shot:
         exposure=(1, rng.choice([250, 500, 1000, 1600, 2000, 3200])),
         fnumber=rng.choice([(56, 10), (63, 10), (71, 10), (8, 1)]),
         focal_length=rng.choice([300, 400, 500, 600]),
-        species=pick_species(number, options.seed),
+        **pick_sample(number, options.seed),
     )
 
 
-def pick_species(number: int, seed: int) -> tuple[str, ...]:
-    """None, one or two species for photo `number`. A stream of its own, so the rest of the shot stays as it was."""
-    rng = random.Random(f"{seed}:species:{number}")
-    roll = rng.uniform(0, 100)
-    count = 0 if roll < NO_SPECIES_PCT else 2 if roll < NO_SPECIES_PCT + TWO_SPECIES_PCT else 1
-    return tuple(name for name, _, _ in rng.sample(SPECIES, count))
+def pick_sample(number: int, seed: int) -> dict:
+    """The sample photo `number` is made from, how it is cropped, and its species (none for some, still to
+    identify). A stream of its own, so the position, time and camera of the shot don't depend on it."""
+    rng = random.Random(f"{seed}:sample:{number}")
+    sample = rng.choice(sorted(SAMPLES))
+    width, height = rng.uniform(MIN_CROP, 1), rng.uniform(MIN_CROP, 1)
+    left, top = rng.uniform(0, 1 - width), rng.uniform(0, 1 - height)
+    untagged = rng.uniform(0, 100) < NO_SPECIES_PCT
+    return {
+        "sample": sample,
+        "crop": (left, top, left + width, top + height),
+        "mirror": rng.random() < 0.5,
+        "species": () if untagged else (SAMPLES[sample].scientific_name,),
+    }
 
 
 def ensure_species(db: Session) -> dict[str, int]:
-    """Every species of SPECIES, by scientific name -> id, created when missing. Species are shared by all accounts,
-    so existing ones are left as they are; one in the trash is skipped rather than restored."""
-    have = {s.scientific_name: s for s in db.scalars(select(Species))}
-    for scientific, en, pt in SPECIES:
-        if scientific not in have:
-            have[scientific] = Species(scientific_name=scientific, name_en=en, name_pt=pt)
-            db.add(have[scientific])
+    """Every species of SPECIES, by scientific name -> id, created with its eBird fields when missing (found by
+    eBird code or scientific name, so a loaded eBird taxonomy is reused). Species are shared by all accounts, so
+    existing ones are left as they are; one in the trash is skipped rather than restored."""
+    rows = db.scalars(select(Species)).all()
+    by_code = {s.ebird_code: s for s in rows if s.ebird_code}
+    by_name = {s.scientific_name.lower(): s for s in rows}
+    found = {}
+    for item in SPECIES:
+        row = by_code.get(item.ebird_code) or by_name.get(item.scientific_name.lower())
+        if row is None:
+            fields = {**item.__dict__, "taxon_order": Decimal(item.taxon_order)}
+            row = Species(**fields)
+            db.add(row)
+        found[item.scientific_name] = row
     db.commit()
-    return {name: s.id for name, s in have.items() if s.deleted_at is None}
+    return {name: row.id for name, row in found.items() if row.deleted_at is None}
 
 
 def scatter(rng: random.Random, lat: float, lon: float, spread_km: float) -> tuple[float, float]:
@@ -201,18 +271,29 @@ def scatter(rng: random.Random, lat: float, lon: float, spread_km: float) -> tup
     return new_lat, new_lon
 
 
+@cache
+def sample_image(name: str) -> Image.Image:
+    """A sample photo, decoded once per process."""
+    with Image.open(SAMPLES_DIR / name) as image:
+        return image.convert("RGB")
+
+
 def jpeg(item: Shot, image_px: int) -> bytes:
-    """A gradient in the hotspot's colours with the photo's number on it, and its metadata as EXIF."""
-    width, height = image_px, max(image_px * 2 // 3, 1)
-    top = PALETTE[item.hotspot.number % len(PALETTE)]
-    bottom = PALETTE[(item.hotspot.number * 3 + 1) % len(PALETTE)]
-    image = ImageOps.colorize(Image.linear_gradient("L").resize((width, height)), black=top, white=bottom)
-    draw = ImageDraw.Draw(image)
-    font = ImageFont.load_default(size=max(height // 5, 10))
-    small = ImageFont.load_default(size=max(height // 14, 8))
-    draw.text((width / 2, height * 0.42), f"#{item.number}", fill="white", font=font, anchor="mm")
-    where = f"Spot {item.hotspot.number}" if item.lat is not None else "no GPS"
-    draw.text((width / 2, height * 0.68), where, fill="white", font=small, anchor="mm")
+    """The shot's crop of its sample, `image_px` on the long edge, with its metadata as EXIF."""
+    source = sample_image(item.sample)
+    left, top, right, bottom = item.crop
+    image = source.crop(
+        (
+            round(left * source.width),
+            round(top * source.height),
+            round(right * source.width),
+            round(bottom * source.height),
+        )
+    )
+    if item.mirror:
+        image = ImageOps.mirror(image)
+    scale = image_px / max(image.size)
+    image = image.resize((max(round(image.width * scale), 1), max(round(image.height * scale), 1)), Image.LANCZOS)
 
     exif = Image.Exif()
     make, model, lens = item.camera
@@ -306,7 +387,7 @@ def seed(db: Session, user: User, options: Options, out=sys.stdout) -> int:
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="python -m devtools.seed", description=__doc__.split("\n\n")[0])
     p.add_argument("--email", required=True, help="dev account; its password is read from DEV_USER_PASSWORD")
-    p.add_argument("--photos", type=int, default=300, help="photos to add (default 300)")
+    p.add_argument("--photos", type=int, default=100, help="photos to add (default 100)")
     p.add_argument("--if-empty", action="store_true", help="add photos only if the account has none")
     p.add_argument("--replace", action="store_true", help="delete the account's photos first")
     p.add_argument("--count", action="store_true", help="only print how many photos the account has")

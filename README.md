@@ -129,11 +129,12 @@ environment variables in `.env`, listed in [CONTRIBUTING.md → Settings](CONTRI
 
 ## Development
 
-`scripts/dev.sh up` starts a disposable local stack with a dev login and 300 generated photos around Portugal,
+`scripts/dev.sh up` starts a disposable local stack with a dev login and 100 photos of real birds around Portugal,
 apart from any real install; see [Dev stack](CONTRIBUTING.md#dev-stack). [CONTRIBUTING.md](CONTRIBUTING.md) also
 covers running the backend and frontend by hand, the API, migrations, tests (100% coverage on both sides) and the
 design decisions behind each part, written up in [docs/plans](docs/plans). The screenshots above come from the dev
-stack: `scripts/screenshots.sh` retakes them.
+stack: `scripts/screenshots.sh` retakes them. The bird photos in the dev stack and the screenshots are from Pixabay; the photographers
+are credited in [backend/devtools/samples/CREDITS.md](backend/devtools/samples/CREDITS.md).
 
 ## What's next
 
