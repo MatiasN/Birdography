@@ -11,7 +11,8 @@ from app import derivatives, exif, exiftool, storage, taxonomy, trash
 from app.auth import create_user, password_problem, restore_user, set_password
 from app.config import settings
 from app.db import engine
-from app.models import Photo, PhotoFile, User
+from app.models import Photo, PhotoFile, Species, User
+from app.species import merge
 
 
 def drop_root() -> None:
@@ -52,6 +53,9 @@ def main():
         "--dir", type=Path, help="use <locale>.json files here when present, and save what is downloaded there"
     )
     species.add_argument("--if-missing", action="store_true", help="do nothing if every species is loaded already")
+    merger = commands.add_parser("merge-species", help="move a hand-added species' photos to another, and trash it")
+    merger.add_argument("source", type=int, help="id of the species added by hand")
+    merger.add_argument("target", type=int, help="id of the species it really is (usually an eBird one)")
     args = parser.parse_args()
 
     with Session(engine) as db:
@@ -88,6 +92,8 @@ def main():
         elif args.command == "verify-files":
             if verify_files(db, checksums=args.checksums):
                 raise SystemExit(1)
+        elif args.command == "merge-species":
+            merge_species(db, args.source, args.target)
         elif args.command == "import-taxonomy":
             import_taxonomy(db, args.dir, if_missing=args.if_missing)
         else:  # reread-metadata; argparse rejects anything else
@@ -101,6 +107,18 @@ def ask_password() -> str:
     if password != getpass("Repeat password: "):
         raise SystemExit("Passwords do not match")
     return password
+
+
+def merge_species(db: Session, source_id: int, target_id: int) -> None:
+    source, target = db.get(Species, source_id), db.get(Species, target_id)
+    for given, row in ((source_id, source), (target_id, target)):
+        if row is None or row.deleted_at is not None:
+            raise SystemExit(f"No species with id {given}")
+    if source.id == target.id or source.ebird_code:
+        raise SystemExit("merge-species: the first species must be one added by hand, other than the second")
+    names = source.scientific_name, target.scientific_name
+    moved = merge(db, source, target)
+    print(f"Moved {moved} photos from {names[0]} to {names[1]}; {names[0]} is in the trash")
 
 
 def import_taxonomy(db: Session, directory: Path | None = None, if_missing: bool = False) -> None:

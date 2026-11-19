@@ -3,11 +3,13 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, exists, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
+from app.auth import CurrentUser
 from app.db import DB
-from app.models import Species
+from app.models import Photo, PhotoSpecies, Species, User
 
 router = APIRouter(prefix="/species", tags=["species"])
 
@@ -52,28 +54,47 @@ class SpeciesOut(SpeciesFields):
 
 
 def _normalize(value):
-    """Case- and accent-insensitive form, so 'garca' matches 'Garça-real'."""
-    return func.unaccent(func.lower(value))
+    """Case-, accent- and hyphen-insensitive form, so 'garca real' matches 'Garça-real'."""
+    return func.unaccent(func.lower(func.replace(value, "-", " ")))
+
+
+def _photographed_by(user: User):
+    """Whether the user has a photo (not in the trash) showing the species."""
+    return exists().where(
+        PhotoSpecies.species_id == Species.id,
+        PhotoSpecies.photo_id == Photo.id,
+        Photo.owner_id == user.id,
+        Photo.deleted_at.is_(None),
+    )
 
 
 @router.get("", response_model=list[SpeciesOut])
 def list_species(
     db: DB,
+    user: CurrentUser,
     q: str | None = None,
+    photographed: bool = False,
     limit: int = Query(50, le=200),
     offset: int = 0,
 ):
-    query = select(Species).where(Species.deleted_at.is_(None)).order_by(Species.scientific_name)
-    if q:
-        like = _normalize(f"%{q}%")
-        query = query.where(
-            or_(
-                _normalize(Species.scientific_name).like(like),
-                _normalize(Species.name_en).like(like),
-                _normalize(Species.name_pt).like(like),
-            )
+    """Species in taxonomic order. With `q`, those with a name containing it (any of the three names, ignoring
+    case, accents and hyphens), ranked: species you have photographed first, then names starting with it (or with
+    a word starting with it), then taxonomic order. `photographed` keeps only species you have photographed."""
+    mine = _photographed_by(user)
+    query = select(Species).where(Species.deleted_at.is_(None))
+    if photographed:
+        query = query.where(mine)
+    order = [Species.taxon_order.asc().nulls_last(), Species.scientific_name]
+    if q and q.strip():
+        text = q.strip().replace("%", r"\%").replace("_", r"\_")
+        names = [_normalize(Species.scientific_name), _normalize(Species.name_en), _normalize(Species.name_pt)]
+        query = query.where(or_(*(name.like(_normalize(f"%{text}%")) for name in names)))
+        starts = or_(
+            *(name.like(_normalize(f"{text}%")) for name in names),
+            *(name.like(_normalize(f"% {text}%")) for name in names),
         )
-    return db.scalars(query.limit(limit).offset(offset)).all()
+        order = [mine.desc(), starts.desc(), *order]
+    return db.scalars(query.order_by(*order).limit(limit).offset(offset)).all()
 
 
 @router.get("/{species_id}", response_model=SpeciesOut)
@@ -113,6 +134,40 @@ def create_species(data: SpeciesIn, db: DB):
     if existing is None or existing.deleted_at is not None:
         raise HTTPException(409, EXISTS)
     return JSONResponse({"detail": EXISTS, "species_id": existing.id}, status_code=409)
+
+
+HAND_ADDED_ONLY = "Only a species added by hand (without an eBird code) can be merged into another"
+
+
+@router.post("/{species_id}/merge-into/{target_id}", response_model=SpeciesOut)
+def merge_species(species_id: int, target_id: int, db: DB):
+    """You found out which species a hand-added one is: its photos move to `target` and it goes to the trash."""
+    source, target = db.get(Species, species_id), db.get(Species, target_id)
+    if not source or source.deleted_at or not target or target.deleted_at:
+        raise HTTPException(404, "Species not found")
+    if source.id == target.id:
+        raise HTTPException(400, "A species cannot be merged into itself")
+    if source.ebird_code:
+        raise HTTPException(400, HAND_ADDED_ONLY)
+    merge(db, source, target)
+    return target
+
+
+def merge(db: Session, source: Species, target: Species) -> int:
+    """Move every photo of `source` to `target` (keeping its place among the photo's species; a photo that has
+    both keeps `target` once), then trash `source`. Returns how many photos moved. Affects every account's photos,
+    since species are shared."""
+    has_target = select(PhotoSpecies.photo_id).where(PhotoSpecies.species_id == target.id)
+    moved = db.execute(
+        update(PhotoSpecies)
+        .where(PhotoSpecies.species_id == source.id, PhotoSpecies.photo_id.not_in(has_target))
+        .values(species_id=target.id)
+    ).rowcount
+    db.execute(delete(PhotoSpecies).where(PhotoSpecies.species_id == source.id))
+    source.deleted_at = datetime.now(UTC)
+    db.commit()
+    db.expire_all()
+    return moved
 
 
 @router.delete("/{species_id}", status_code=204)

@@ -30,6 +30,7 @@ def test_photos_carry_their_species_names_in_order(client):
         "scientific_name": "Ciconia ciconia",
         "name_en": "White Stork",
         "name_pt": None,
+        "ebird_code": None,
     }
     client.delete(f"/species/{stork['id']}")
     listed = client.get("/photos").json()[0]

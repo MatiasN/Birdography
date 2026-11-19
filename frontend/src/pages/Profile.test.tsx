@@ -2,13 +2,14 @@ import { render, screen } from "@testing-library/react";
 import { createMemoryRouter, Outlet, RouterProvider } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import type { User } from "@/api";
 import type { LayoutContext } from "@/hooks/useLayout";
 import { me, mockApi, type Routes } from "@/test/api";
 import Profile from "@/pages/Profile";
 
 /** Profile inside a parent that provides what Layout gives its pages. */
-function renderProfile(logout = vi.fn<() => Promise<void>>()) {
-  const context: LayoutContext = { user: me({ expires_at: "2026-12-16T12:00:00Z" }), logout };
+function renderProfile(logout = vi.fn<() => Promise<void>>(), setUser = vi.fn<(user: User) => void>()) {
+  const context: LayoutContext = { user: me({ expires_at: "2026-12-16T12:00:00Z" }), setUser, logout };
   const router = createMemoryRouter(
     [{ element: <Outlet context={context} />, children: [{ path: "/profile", element: <Profile /> }] }],
     { initialEntries: ["/profile"] },
@@ -97,10 +98,11 @@ describe("Profile", () => {
 
   it("has the theme choice and the password and session sections", () => {
     renderProfile();
-    for (const name of ["Appearance", "Password", "Session"]) {
+    for (const name of ["Appearance", "Species names", "Password", "Session"]) {
       expect(screen.getByRole("heading", { level: 2, name })).toBeInTheDocument();
     }
     expect(screen.getByRole("radiogroup", { name: "Theme" })).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "Species names" })).toBeInTheDocument();
   });
 
   it("logs out", async () => {

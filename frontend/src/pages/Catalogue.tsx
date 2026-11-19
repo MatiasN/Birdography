@@ -9,17 +9,8 @@ import { Button } from "@/components/ui/button";
 import { usePhotoParam } from "@/hooks/usePhotoParam";
 import { apiQuery, hasFilters, NO_FILTERS, readFilters, writeFilters, type Filters } from "@/lib/filters";
 import { cn } from "cn";
-import {
-  api,
-  photoTitle,
-  photoUrl,
-  speciesName,
-  takenDate,
-  type Camera,
-  type Photo,
-  type Species,
-  type Summary,
-} from "@/api";
+import { api, photoTitle, photoUrl, takenDate, type Camera, type Photo, type Species, type Summary } from "@/api";
+import { useSpeciesNames } from "@/hooks/useSpeciesNames";
 
 // Loaded when a photo is first opened: its position map brings Leaflet, which the grid itself doesn't need.
 const PhotoDetail = lazy(() => import("@/components/PhotoDetail"));
@@ -30,6 +21,7 @@ export const PAGE = 60;
 const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 
 function Tile({ photo, selected, onOpen }: { photo: Photo; selected: boolean; onOpen: () => void }) {
+  const { name } = useSpeciesNames();
   const [first] = photo.species;
   const more = photo.species.length - 1;
   return (
@@ -55,7 +47,7 @@ function Tile({ photo, selected, onOpen }: { photo: Photo; selected: boolean; on
         <span className="block truncate text-sm font-medium">
           {first ? (
             <>
-              {speciesName(first)}
+              {name(first)}
               {more > 0 && <span className="text-muted-foreground"> +{more}</span>}
             </>
           ) : (
@@ -74,6 +66,7 @@ function Tile({ photo, selected, onOpen }: { photo: Photo; selected: boolean; on
 type Result = { key: string; photos: Photo[]; more: boolean; error: string | null };
 
 export default function Catalogue() {
+  const { language } = useSpeciesNames();
   const [params, setParams] = useSearchParams();
   // Only the filter part of the URL: opening a photo changes the URL too, and must not reload the list.
   const filterKey = writeFilters(new URLSearchParams(), readFilters(params)).toString();
@@ -279,7 +272,7 @@ export default function Catalogue() {
       </div>
 
       {selected && (
-        <ResponsivePanel title={photoTitle(selected)} onClose={close}>
+        <ResponsivePanel title={photoTitle(selected, language)} onClose={close}>
           <Suspense fallback={<p className="p-4 text-sm text-muted-foreground">Loading…</p>}>
             <PhotoDetail photo={selected} onChange={replace} />
           </Suspense>

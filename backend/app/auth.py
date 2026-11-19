@@ -1,5 +1,5 @@
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -52,6 +52,11 @@ class UserOut(BaseModel):
 
     id: int
     email: str
+    species_name_language: str  # "en", "pt" or "sci": the species name shown first
+
+
+class Preferences(BaseModel):
+    species_name_language: Literal["en", "pt", "sci"]
 
 
 class SessionOut(UserOut):
@@ -220,7 +225,24 @@ def change_password(data: PasswordChange, user: CurrentUser, request: Request, r
 
 @router.get("/me", response_model=SessionOut)
 def me(user: CurrentUser, request: Request):
-    return SessionOut(id=user.id, email=user.email, expires_at=request.state.session_expires_at)
+    return _session(user, request)
+
+
+@router.patch("/me", response_model=SessionOut)
+def update_me(data: Preferences, user: CurrentUser, request: Request, db: DB):
+    """Change the account's preferences: which species name (English, Portuguese, scientific) is shown first."""
+    user.species_name_language = data.species_name_language
+    db.commit()
+    return _session(user, request)
+
+
+def _session(user: User, request: Request) -> SessionOut:
+    return SessionOut(
+        id=user.id,
+        email=user.email,
+        species_name_language=user.species_name_language,
+        expires_at=request.state.session_expires_at,
+    )
 
 
 @router.delete("/me", status_code=204)

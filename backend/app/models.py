@@ -37,14 +37,20 @@ class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
+SPECIES_NAME_LANGUAGES = ("en", "pt", "sci")  # English, Portuguese, scientific
+
+
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (CheckConstraint("species_name_language IN ('en', 'pt', 'sci')", name="species_name_language"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str] = mapped_column(String(320), unique=True)
     password_hash: Mapped[str] = mapped_column(String(200))
     # Carried in every session token; bumping it (password change) invalidates all tokens issued before.
     session_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Which of a species' names is shown first everywhere; the other two follow as a second line.
+    species_name_language: Mapped[str] = mapped_column(String(3), default="en", server_default="en")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

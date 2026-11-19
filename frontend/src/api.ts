@@ -8,20 +8,36 @@ export type PhotoFile = {
   height: number | null;
 };
 
-/** A species as photos carry it; `/species` returns these fields and a few more (family, eBird code). */
+/** A species as photos carry it; `/species` returns these fields and a few more (family, taxonomic order). */
 export type Species = {
   id: number;
   scientific_name: string;
   name_en: string | null;
   name_pt: string | null;
+  /** The eBird code; null for a species added by hand, which can be merged into an eBird one. */
+  ebird_code?: string | null;
 };
 
-/** The name shown for a species: English, else Portuguese, else the scientific name. */
-export const speciesName = (species: Species) => species.name_en ?? species.name_pt ?? species.scientific_name;
+/** Which of a species' names comes first, a profile setting (plan 0009 D16). */
+export type NameLanguage = "en" | "pt" | "sci";
+
+const NAME_ORDER: Record<NameLanguage, (keyof Species)[]> = {
+  en: ["name_en", "name_pt", "scientific_name"],
+  pt: ["name_pt", "name_en", "scientific_name"],
+  sci: ["scientific_name", "name_en", "name_pt"],
+};
+
+const names = (species: Species, language: NameLanguage) =>
+  NAME_ORDER[language]
+    .map((key) => species[key])
+    .filter((name): name is string => typeof name === "string" && name !== "");
+
+/** The name shown for a species: the one in `language`, else the next one there is. */
+export const speciesName = (species: Species, language: NameLanguage = "en") => names(species, language)[0];
 
 /** The other names, for a second line: "Garça-real · Ardea cinerea". */
-export const speciesOtherNames = (species: Species) =>
-  [species.name_en && species.name_pt, species.scientific_name].filter(Boolean).join(" · ");
+export const speciesOtherNames = (species: Species, language: NameLanguage = "en") =>
+  names(species, language).slice(1).join(" · ");
 
 export type Photo = {
   id: number;
@@ -48,7 +64,8 @@ export type Photo = {
 };
 
 /** The photo detail's title: its first species, or a plain one while it has none. */
-export const photoTitle = (photo: Photo) => (photo.species[0] ? speciesName(photo.species[0]) : "Photo details");
+export const photoTitle = (photo: Photo, language: NameLanguage = "en") =>
+  photo.species[0] ? speciesName(photo.species[0], language) : "Photo details";
 
 /** One of the user's cameras, from /photos/cameras. */
 export type Camera = { make: string | null; model: string | null; photos: number };
@@ -56,7 +73,7 @@ export type Camera = { make: string | null; model: string | null; photos: number
 /** How many photos a filter matches and how many species they show, from /photos/summary. */
 export type Summary = { photos: number; species: number };
 
-export type User = { id: number; email: string; expires_at: string };
+export type User = { id: number; email: string; species_name_language: NameLanguage; expires_at: string };
 
 /** Fired on any 401 outside the login and password forms: the session expired or was ended elsewhere. */
 export const SESSION_EXPIRED = "session-expired";

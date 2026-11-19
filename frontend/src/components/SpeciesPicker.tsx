@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
-import { api, ApiError, json, speciesName, speciesOtherNames, type Species } from "@/api";
+import { api, ApiError, json, type Species } from "@/api";
+import { useSpeciesNames } from "@/hooks/useSpeciesNames";
 import { cn } from "cn";
 
 /** How long typing pauses before the search runs. */
@@ -19,6 +20,8 @@ type Props = {
   exclude?: number[];
   /** Offer "Add … as a new species" (the photo detail, uploads); off where the picker only filters. */
   allowCreate?: boolean;
+  /** Search only the species the user has photographed (the Catalogue's filter); otherwise all of them. */
+  photographed?: boolean;
   label?: string;
   /** Focus the field when it appears, as after clicking "Add species". */
   focusOnMount?: boolean;
@@ -51,11 +54,13 @@ export default function SpeciesPicker({
   onPick,
   exclude = [],
   allowCreate = true,
+  photographed = false,
   label = "Species",
   focusOnMount = false,
   className,
 }: Props) {
   const id = useId();
+  const { name, otherNames } = useSpeciesNames();
   const input = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Species[] | null>(null); // null: not searched for this text yet
@@ -73,7 +78,9 @@ export default function SpeciesPicker({
     if (!text) return undefined;
     let current = true;
     const timer = setTimeout(() => {
-      api<Species[]>(`/species?q=${encodeURIComponent(text)}&limit=${RESULTS}`).then(
+      api<Species[]>(
+        `/species?q=${encodeURIComponent(text)}&limit=${RESULTS}${photographed ? "&photographed=true" : ""}`,
+      ).then(
         (found) => current && setResults(found),
         () => current && setError("Could not search the species"),
       );
@@ -82,7 +89,7 @@ export default function SpeciesPicker({
       current = false;
       clearTimeout(timer);
     };
-  }, [text]);
+  }, [text, photographed]);
 
   const shown = (results ?? []).filter((species) => !exclude.includes(species.id));
   const options: Option[] = [
@@ -176,8 +183,8 @@ export default function SpeciesPicker({
                   </span>
                 ) : (
                   <>
-                    <span className="font-medium">{speciesName(option.species)}</span>
-                    <span className="text-xs text-muted-foreground">{speciesOtherNames(option.species)}</span>
+                    <span className="font-medium">{name(option.species)}</span>
+                    <span className="text-xs text-muted-foreground">{otherNames(option.species)}</span>
                   </>
                 )}
               </div>

@@ -1,6 +1,7 @@
 import { LogOutIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { initial } from "@/lib/initial";
+import NameLanguagePicker from "@/components/NameLanguagePicker";
 import ThemePicker from "@/components/ThemePicker";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -108,9 +109,9 @@ function PasswordCard() {
   );
 }
 
-/** The account: who is logged in, the theme, the password and logging out (plan 0007 §5.1). */
+/** The account: who is logged in, the theme, species names, the password and logging out (plan 0007 §5.1). */
 export default function Profile() {
-  const { user, logout } = useLayout();
+  const { user, setUser, logout } = useLayout();
   return (
     <div className="p-4 md:p-6 xl:p-8">
       <div className="mx-auto max-w-2xl space-y-6">
@@ -133,6 +134,19 @@ export default function Profile() {
           </CardHeader>
           <CardContent>
             <ThemePicker />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              <h2>Species names</h2>
+            </CardTitle>
+            <CardDescription>
+              The name shown first everywhere: in the catalogue, the photo details and when picking a species.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <NameLanguagePicker user={user} onChange={setUser} />
           </CardContent>
         </Card>
         <PasswordCard />

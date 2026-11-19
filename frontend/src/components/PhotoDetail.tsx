@@ -1,21 +1,11 @@
 import "leaflet/dist/leaflet.css";
-import { PlusIcon, XIcon } from "lucide-react";
+import { GitMergeIcon, PlusIcon, XIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { CircleMarker, MapContainer, TileLayer, useMapEvents } from "react-leaflet";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  api,
-  ApiError,
-  fileSize,
-  json,
-  offsetLabel,
-  photoUrl,
-  position,
-  speciesName,
-  speciesOtherNames,
-  type Photo,
-} from "@/api";
+import { api, ApiError, fileSize, json, offsetLabel, photoUrl, position, type Photo, type Species } from "@/api";
+import { useSpeciesNames } from "@/hooks/useSpeciesNames";
 import InvalidateOnResize from "@/components/InvalidateOnResize";
 import SpeciesPicker from "@/components/SpeciesPicker";
 import { ATTRIBUTION, DEFAULT_CENTER, DEFAULT_ZOOM, OSM } from "@/map";
@@ -55,7 +45,9 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 /** The photo's species: shown, added with the picker and removed, each change saved at once. */
 function SpeciesSection({ photo, onChange }: Props) {
+  const { name, otherNames } = useSpeciesNames();
   const [adding, setAdding] = useState(false);
+  const [merging, setMerging] = useState<number | null>(null); // the hand-added species being merged
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,6 +63,21 @@ function SpeciesSection({ photo, onChange }: Props) {
     }
   }
 
+  /** Merge a hand-added species into the one it really is (plan 0009 D11a), then show the photo as it is now. */
+  async function merge(source: Species, target: Species) {
+    setSaving(true);
+    setError(null);
+    try {
+      await api<Species>(`/species/${source.id}/merge-into/${target.id}`, { method: "POST" });
+      setMerging(null);
+      onChange(await api<Photo>(`/photos/${photo.id}`));
+    } catch (problem) {
+      setError(problem instanceof ApiError ? problem.message : "Could not merge the species");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <section className="space-y-2">
       <h3 className="font-medium">Species</h3>
@@ -79,20 +86,49 @@ function SpeciesSection({ photo, onChange }: Props) {
       ) : (
         <ul className="space-y-2">
           {photo.species.map((species) => (
-            <li key={species.id} className="flex items-center gap-3 rounded-lg border bg-background px-3 py-2">
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-medium">{speciesName(species)}</span>
-                <span className="block truncate text-xs text-muted-foreground">{speciesOtherNames(species)}</span>
-              </span>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`Remove ${speciesName(species)}`}
-                disabled={saving}
-                onClick={() => void save(photo.species_ids.filter((id) => id !== species.id))}
-              >
-                <XIcon />
-              </Button>
+            <li key={species.id} className="rounded-lg border bg-background px-3 py-2">
+              <div className="flex items-center gap-3">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">{name(species)}</span>
+                  <span className="block truncate text-xs text-muted-foreground">{otherNames(species)}</span>
+                </span>
+                {species.ebird_code === null && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Merge ${name(species)} into another species`}
+                    aria-expanded={merging === species.id}
+                    disabled={saving}
+                    onClick={() => setMerging(merging === species.id ? null : species.id)}
+                  >
+                    <GitMergeIcon />
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Remove ${name(species)}`}
+                  disabled={saving}
+                  onClick={() => void save(photo.species_ids.filter((id) => id !== species.id))}
+                >
+                  <XIcon />
+                </Button>
+              </div>
+              {merging === species.id && (
+                <div className="mt-2 space-y-2 border-t pt-2">
+                  <p className="text-xs text-muted-foreground">
+                    Added by hand. If it is a species of the list, pick it: every photo of “{name(species)}”, in every
+                    account, moves to it, and “{name(species)}” goes to the trash.
+                  </p>
+                  <SpeciesPicker
+                    label={`Species ${name(species)} really is`}
+                    allowCreate={false}
+                    focusOnMount
+                    exclude={[species.id]}
+                    onPick={(target) => void merge(species, target)}
+                  />
+                </div>
+              )}
             </li>
           ))}
         </ul>

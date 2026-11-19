@@ -163,15 +163,29 @@ describe("species names", () => {
   const neither = makeSpecies({ name_en: null, name_pt: null }); // older records may lack common names
 
   it("shows English, else Portuguese, else the scientific name", () => {
-    expect([both, portugueseOnly, neither].map(speciesName)).toEqual(["Grey Heron", "Garça-real", "Ardea cinerea"]);
+    expect([both, portugueseOnly, neither].map((s) => speciesName(s))).toEqual([
+      "Grey Heron",
+      "Garça-real",
+      "Ardea cinerea",
+    ]);
   });
 
   it("puts the names not shown on the second line", () => {
-    expect([both, portugueseOnly, neither].map(speciesOtherNames)).toEqual([
+    expect([both, portugueseOnly, neither].map((s) => speciesOtherNames(s))).toEqual([
       "Garça-real · Ardea cinerea",
       "Ardea cinerea",
-      "Ardea cinerea",
+      "", // the scientific name is the title already
     ]);
+  });
+
+  it("follows the chosen language, falling back to the next name there is", () => {
+    const englishOnly = makeSpecies({ name_pt: null });
+    expect([both, englishOnly].map((s) => speciesName(s, "pt"))).toEqual(["Garça-real", "Grey Heron"]);
+    expect(speciesOtherNames(both, "pt")).toBe("Grey Heron · Ardea cinerea");
+    expect(speciesOtherNames(englishOnly, "pt")).toBe("Ardea cinerea");
+    expect(speciesName(both, "sci")).toBe("Ardea cinerea");
+    expect(speciesOtherNames(both, "sci")).toBe("Grey Heron · Garça-real");
+    expect(photoTitle(makePhoto({ species: [both] }), "sci")).toBe("Ardea cinerea");
   });
 
   it("titles a photo after its first species", () => {

@@ -50,7 +50,7 @@ Part 1 is [plan 0007](docs/plans/0007-phase1.5-ui-overhaul-part1.md), Part 2 [pl
 
 Turn the catalog into a field guide.
 
-- [ ] Built-in species list: the eBird taxonomy loaded with English, Portuguese and scientific names, eBird code and taxonomic order, so the upload picker and the Species and Near me tabs know every species, not only the ones already photographed
+- [x] Built-in species list: the eBird taxonomy loaded with English, Portuguese and scientific names, eBird code and taxonomic order, so the upload picker and the Species and Near me tabs know every species, not only the ones already photographed; downloaded by `import-taxonomy` (eBird's terms rule out shipping it), searched with your species first, a profile setting for which name comes first, and hand-added species mergeable into eBird ones, see [plan 0009](docs/plans/0009-real-sample-photos-and-ebird-taxonomy.md)
 - [ ] Regions for every photo: continent, country and region (state, district) worked out from its position, using eBird region codes so they match the checklists of Phase 3
 - [ ] Group photos into location stops
 - [ ] Catalogue grouping: group by location (continent, country or region, then stop) or by species

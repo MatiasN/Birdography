@@ -276,7 +276,7 @@ describe("Catalogue filters", () => {
   it("filters by species picked in the search, in the URL, and counts what matches", async () => {
     const filtered = `GET /photos?species_id=1&limit=${PAGE}&offset=0`;
     const { router, calls } = await start(many(3), {
-      "GET /species?q=heron&limit=8": { body: [heron, egret] },
+      "GET /species?q=heron&limit=8&photographed=true": { body: [heron, egret] },
       [filtered]: { body: [makePhoto({ id: 2, species_ids: [1], species: [heron] })] },
       "GET /photos/summary?species_id=1": { body: { photos: 1, species: 1 } },
     });

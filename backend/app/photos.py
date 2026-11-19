@@ -43,6 +43,7 @@ class SpeciesBrief(BaseModel):
     scientific_name: str
     name_en: str | None
     name_pt: str | None
+    ebird_code: str | None  # None for a species added by hand
 
 
 class PhotoOut(BaseModel):

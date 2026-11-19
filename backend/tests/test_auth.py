@@ -266,3 +266,13 @@ def test_tokens_from_before_sliding_sessions_keep_their_expiry(client, anon):
     assert response.status_code == 200
     assert "set-cookie" not in response.headers
     assert response.json()["expires_at"] == datetime.fromtimestamp(expires, UTC).isoformat().replace("+00:00", "Z")
+
+
+def test_species_name_language_defaults_to_english_and_can_be_changed(client):
+    assert client.get("/auth/me").json()["species_name_language"] == "en"
+    changed = client.patch("/auth/me", json={"species_name_language": "pt"})
+    assert changed.status_code == 200
+    assert changed.json()["species_name_language"] == "pt" and changed.json()["email"] == "me@example.com"
+    assert client.get("/auth/me").json()["species_name_language"] == "pt"
+    assert client.patch("/auth/me", json={"species_name_language": "fr"}).status_code == 422
+    assert client.patch("/auth/me", json={"species_name_language": "sci"}).json()["species_name_language"] == "sci"

@@ -6,6 +6,7 @@ import { inProgress, useUploads } from "@/hooks/useUploads";
 import type { LayoutContext } from "@/hooks/useLayout";
 import { cn } from "cn";
 import { api, send, SESSION_EXPIRED, type User } from "@/api";
+import { NameLanguageContext } from "@/hooks/useSpeciesNames";
 import { pageTitle, TABS } from "@/nav";
 
 /** setTimeout saturates at 2^31-1 ms (~25 days); longer waits just re-check when the timer fires. */
@@ -161,7 +162,9 @@ export default function Layout() {
         <div className="flex min-w-0 flex-1 flex-col pb-(--tab-bar-height) md:pb-0">
           <PhoneBars email={user.email} onLogout={onLogout} title={pageTitle(location.pathname)} />
           <main className="flex flex-1 flex-col">
-            <Outlet context={{ user, logout } satisfies LayoutContext} />
+            <NameLanguageContext.Provider value={user.species_name_language}>
+              <Outlet context={{ user, setUser, logout } satisfies LayoutContext} />
+            </NameLanguageContext.Provider>
           </main>
         </div>
       </div>

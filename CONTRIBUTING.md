@@ -378,6 +378,21 @@ eBird's code and names. Species eBird doesn't have are left as they are and list
 longer in the taxonomy (kept, never deleted). Running it again with the same taxonomy changes nothing. The dev stack
 loads it on `scripts/dev.sh up`, downloading once into `.dev/taxonomy/`.
 
+A species added by hand that turns out to be one of the list can be merged into it: from the photo details (the
+merge button next to a hand-added species), `POST /species/{id}/merge-into/{target}`, or
+
+```bash
+python -m app.cli merge-species SOURCE_ID TARGET_ID
+```
+
+Its photos, in every account, move to the target (a photo that has both keeps the target once), and it goes to the
+trash. Only species without an eBird code can be merged away.
+
+`GET /species?q=` searches the three names, ignoring case, accents and hyphens ("garca real" finds Garça-real), and
+ranks species you have photographed first, then names starting with the text, then taxonomic order;
+`photographed=true` keeps only yours (the Catalogue's filter). Each account chooses which name comes first in the
+UI (English, Portuguese or scientific) on the profile page, saved with `PATCH /auth/me`.
+
 ## Trash
 
 Deleting a photo, location, species or account through the API moves it to the trash instead of removing it. Trashed rows are hidden and recoverable for `TRASH_DAYS` (default 30). Photos linked to a trashed location or species show up as unlinked until it is restored or purged.

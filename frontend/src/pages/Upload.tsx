@@ -14,13 +14,15 @@ import { Link } from "react-router-dom";
 import SpeciesPicker from "@/components/SpeciesPicker";
 import { Button } from "@/components/ui/button";
 import { heldForPair, inProgress, useUploads, type UploadItem } from "@/hooks/useUploads";
-import { api, fileSize, IMAGE_EXTENSIONS, speciesName, type Health, type Species } from "@/api";
+import { api, fileSize, IMAGE_EXTENSIONS, type Health, type Species } from "@/api";
+import { useSpeciesNames } from "@/hooks/useSpeciesNames";
 import { cn } from "cn";
 
 const ACCEPT = IMAGE_EXTENSIONS.map((ext) => `.${ext}`).join(",");
 
 /** A species on a file or on the batch, with its remove button unless it can't change any more. */
 function Chip({ species, onRemove, small }: { species: Species; onRemove?: () => void; small?: boolean }) {
+  const { name } = useSpeciesNames();
   return (
     <li
       className={cn(
@@ -29,13 +31,13 @@ function Chip({ species, onRemove, small }: { species: Species; onRemove?: () =>
         !onRemove && "pr-2.5",
       )}
     >
-      {speciesName(species)}
+      {name(species)}
       {onRemove && (
         <Button
           variant="ghost"
           size="icon-sm"
           className={cn("rounded-full", small ? "size-5" : "size-6")}
-          aria-label={`Remove ${speciesName(species)}`}
+          aria-label={`Remove ${name(species)}`}
           onClick={onRemove}
         >
           <XIcon />

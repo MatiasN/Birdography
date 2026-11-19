@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { usePhotoParam } from "@/hooks/usePhotoParam";
 import { api, fileUrl, photoTitle, type Photo, type Summary } from "@/api";
+import { useSpeciesNames } from "@/hooks/useSpeciesNames";
 import {
   countLabel,
   MARKER_PX,
@@ -137,6 +138,7 @@ function NothingOnTheMap({ total }: { total: Summary | "unknown" }) {
 }
 
 export default function MapPage() {
+  const { language } = useSpeciesNames();
   const [points, setPoints] = useState<Point[] | null>(null);
   // null until the count arrives, so the message doesn't change under the user's eyes.
   const [total, setTotal] = useState<Summary | "unknown" | null>(null);
@@ -187,7 +189,7 @@ export default function MapPage() {
 
       {/* One panel at a time: a photo opened from a group takes its place, and closing it brings the group back. */}
       {shown ? (
-        <ResponsivePanel title={photoTitle(shown)} onClose={closePhoto}>
+        <ResponsivePanel title={photoTitle(shown, language)} onClose={closePhoto}>
           <PhotoDetail photo={shown} onChange={changed} />
         </ResponsivePanel>
       ) : (

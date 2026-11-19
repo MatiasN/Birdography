@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { speciesName, type Camera, type Species } from "@/api";
+import { type Camera, type Species } from "@/api";
+import { useSpeciesNames } from "@/hooks/useSpeciesNames";
 import { dateLabel, isoDay, type Filters } from "@/lib/filters";
 import { cn } from "cn";
 
@@ -174,6 +175,7 @@ const cameraLabel = (make: string | null, model: string | null) => [make, model]
  * Each change goes to `onChange`; the page keeps the filters in the URL.
  */
 export default function FilterBar({ filters, onChange, cameras, species, onSpeciesPicked, count }: Props) {
+  const names = useSpeciesNames();
   const set = (changes: Partial<Filters>) => onChange({ ...filters, ...changes });
   const positionLabel =
     filters.located === null ? "Any position" : filters.located ? "With position" : "Without position";
@@ -186,6 +188,7 @@ export default function FilterBar({ filters, onChange, cameras, species, onSpeci
           className="md:w-80"
           label="Filter by species"
           allowCreate={false}
+          photographed
           exclude={filters.species}
           onPick={(picked) => {
             onSpeciesPicked(picked);
@@ -289,7 +292,7 @@ export default function FilterBar({ filters, onChange, cameras, species, onSpeci
         <ul aria-label="Species in the filter" className="flex flex-wrap gap-2">
           {filters.species.map((id) => {
             const known = species[id];
-            const name = known ? speciesName(known) : "…";
+            const name = known ? names.name(known) : "…";
             return (
               <li
                 key={id}

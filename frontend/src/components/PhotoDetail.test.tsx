@@ -193,6 +193,54 @@ describe("PhotoDetail's species", () => {
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   });
 
+  it("merges a species added by hand into the one it really is", async () => {
+    const mine = makeSpecies({ id: 7, scientific_name: "Robinia fakeus", name_en: "My robin", ebird_code: null });
+    const robin = makeSpecies({ id: 8, scientific_name: "Erithacus rubecula", name_en: "European Robin" });
+    const after = makePhoto({ species_ids: [8], species: [robin] });
+    const calls = mockApi({
+      "GET /species?q=robin&limit=8": { body: [mine, robin] },
+      "POST /species/7/merge-into/8": { body: robin },
+      "GET /photos/1": { body: after },
+    });
+    const { onChange } = renderDetail(makePhoto({ species_ids: [7, 1], species: [mine, heron] }));
+    expect(screen.queryByRole("button", { name: "Merge Grey Heron into another species" })).not.toBeInTheDocument();
+    const toggle = screen.getByRole("button", { name: "Merge My robin into another species" });
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText(/in every account, moves to it/)).toBeInTheDocument();
+    await userEvent.click(toggle); // closes again
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    await userEvent.click(toggle);
+    const field = screen.getByRole("combobox", { name: "Species My robin really is" });
+    await userEvent.type(field, "robin");
+    const options = await screen.findAllByRole("option");
+    expect(options).toHaveLength(1); // itself left out, and no "Add as a new species"
+    await userEvent.click(options[0]);
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(after));
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toContain("POST /species/7/merge-into/8");
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["the API's message", { status: 404, body: { detail: "Species not found" } }, "Species not found"],
+    [
+      "a plain one on a network error",
+      () => {
+        throw new TypeError("offline");
+      },
+      "Could not merge the species",
+    ],
+  ])("shows %s when merging fails", async (_, reply, message) => {
+    const mine = makeSpecies({ id: 7, scientific_name: "Robinia fakeus", name_en: "My robin", ebird_code: null });
+    mockApi({ "GET /species?q=robin&limit=8": { body: [heron] }, "POST /species/7/merge-into/1": reply });
+    const { onChange } = renderDetail(makePhoto({ species_ids: [7], species: [mine] }));
+    await userEvent.click(screen.getByRole("button", { name: "Merge My robin into another species" }));
+    await userEvent.type(screen.getByRole("combobox", { name: "Species My robin really is" }), "robin");
+    await userEvent.click((await screen.findAllByRole("option"))[0]);
+    expect(await within(section()).findByText(message)).toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["the API's message", { status: 400, body: { detail: "Unknown species" } }, "Unknown species"],
     [

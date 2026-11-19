@@ -1,4 +1,9 @@
-from tests.conftest import make_jpeg
+from sqlalchemy.orm import Session
+
+from app.db import engine
+from app.models import Photo, Species
+from tests.conftest import login, make_jpeg
+from tests.test_catalogue_api import upload
 
 HERON = {
     "scientific_name": "Ardea cinerea",
@@ -121,3 +126,114 @@ def test_portuguese_alone_is_enough_and_spaces_are_trimmed(client):
         None,
         "Garça-real",
     )
+
+
+# --- search with a full taxonomy (plan 0009 §3.4) --------------------------------------------------------------
+
+ROBINS = [
+    {"scientific_name": "Turdus migratorius", "name_en": "American Robin", "taxon_order": 30000},
+    {
+        "scientific_name": "Erithacus rubecula",
+        "name_en": "European Robin",
+        "name_pt": "Pisco-de-peito-ruivo",
+        "taxon_order": 29444,
+    },
+    {"scientific_name": "Copsychus saularis", "name_en": "Oriental Magpie-Robin", "taxon_order": 29000},
+    {"scientific_name": "Petroica boodang", "name_en": "Scarlet Robin", "taxon_order": 26000},
+    {"scientific_name": "Robinia fakeus", "name_en": "Hand-added bird"},  # no taxon order
+    {"scientific_name": "Ardea cinerea", "name_en": "Grey Heron", "name_pt": "Garça-real", "taxon_order": 7803},
+]
+
+
+def add_all(client) -> dict[str, int]:
+    return {s["scientific_name"]: client.post("/species", json=s).json()["id"] for s in ROBINS}
+
+
+def search(client, **params) -> list[str]:
+    return [s["scientific_name"] for s in client.get("/species", params=params).json()]
+
+
+def test_list_is_in_taxonomic_order_with_hand_added_species_last(client):
+    add_all(client)
+    assert search(client) == [
+        "Ardea cinerea",
+        "Petroica boodang",
+        "Copsychus saularis",
+        "Erithacus rubecula",
+        "Turdus migratorius",
+        "Robinia fakeus",
+    ]
+
+
+def test_search_ranks_names_starting_with_the_text_first(client):
+    add_all(client)
+    # "Robinia" and the word "Robin" in names start with "robin"; "Magpie-Robin" counts too (hyphen = space)
+    assert search(client, q="robin") == [
+        "Petroica boodang",
+        "Copsychus saularis",
+        "Erithacus rubecula",
+        "Turdus migratorius",
+        "Robinia fakeus",
+    ]
+    assert search(client, q="rubecula") == ["Erithacus rubecula"]
+    assert search(client, q="obin")[:1] == ["Petroica boodang"]  # inside a word: still found, taxonomic order
+
+
+def test_search_puts_species_you_photographed_first(client):
+    ids = add_all(client)
+    upload(client, species_ids=[ids["Erithacus rubecula"]])
+    assert search(client, q="robin")[0] == "Erithacus rubecula"
+    other = login("other@example.com")  # not their photo: plain order
+    assert search(other, q="robin")[0] == "Petroica boodang"
+
+
+def test_search_ignores_hyphens_and_wildcards(client):
+    add_all(client)
+    assert search(client, q="garca real") == ["Ardea cinerea"]
+    assert search(client, q="pisco de peito") == ["Erithacus rubecula"]
+    assert search(client, q="%") == [] and search(client, q="_") == []
+    assert len(search(client, q="  ")) == len(ROBINS)  # blank: no filter
+
+
+def test_photographed_keeps_your_species_only(client):
+    ids = add_all(client)
+    photo = upload(client, species_ids=[ids["Ardea cinerea"], ids["Turdus migratorius"]]).json()
+    trashed = upload(client, species_ids=[ids["Petroica boodang"]]).json()
+    assert client.delete(f"/photos/{trashed['id']}").status_code == 204
+    assert search(client, photographed="true") == ["Ardea cinerea", "Turdus migratorius"]
+    assert search(client, photographed="true", q="robin") == ["Turdus migratorius"]
+    assert search(login("other@example.com"), photographed="true") == []
+    assert photo["species_ids"]
+
+
+# --- merging a hand-added species (plan 0009 D11a) -------------------------------------------------------------
+
+
+def test_merge_moves_photos_and_trashes_the_hand_added_species(client):
+    ids = add_all(client)
+    mine, ebird = ids["Robinia fakeus"], ids["Erithacus rubecula"]
+    only_mine = upload(client, species_ids=[ids["Ardea cinerea"], mine]).json()
+    both = upload(client, species_ids=[mine, ebird]).json()
+    others = upload(login("other@example.com"), species_ids=[mine]).json()
+
+    merged = client.post(f"/species/{mine}/merge-into/{ebird}")
+    assert merged.status_code == 200 and merged.json()["id"] == ebird
+    assert client.get(f"/photos/{only_mine['id']}").json()["species_ids"] == [ids["Ardea cinerea"], ebird]
+    assert client.get(f"/photos/{both['id']}").json()["species_ids"] == [ebird]
+    with Session(engine) as db:
+        assert [link.species_id for link in db.get(Photo, others["id"]).species_links] == [ebird]
+        assert db.get(Species, mine).deleted_at is not None
+
+
+def test_merge_refuses_what_it_cannot_do(client):
+    ids = add_all(client)
+    mine, ebird = ids["Robinia fakeus"], ids["Erithacus rubecula"]
+    client.post("/species", json={"scientific_name": "Coded", "name_en": "Coded", "ebird_code": "coded1"})
+    coded_id = client.get("/species", params={"q": "coded"}).json()[0]["id"]
+    assert client.post(f"/species/{mine}/merge-into/999").status_code == 404
+    assert client.post(f"/species/999/merge-into/{ebird}").status_code == 404
+    assert client.post(f"/species/{mine}/merge-into/{mine}").status_code == 400
+    answer = client.post(f"/species/{coded_id}/merge-into/{ebird}")
+    assert answer.status_code == 400 and "added by hand" in answer.json()["detail"]
+    client.delete(f"/species/{ebird}")
+    assert client.post(f"/species/{mine}/merge-into/{ebird}").status_code == 404

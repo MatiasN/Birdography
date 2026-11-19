@@ -82,9 +82,10 @@ export const makeSpecies = (overrides: Partial<Species> = {}): Species => ({
 });
 
 /** /auth/me's shape; expires far enough out that Layout's timer never fires during a test. */
-export const me = (overrides: Partial<User> = {}) => ({
+export const me = (overrides: Partial<User> = {}): User => ({
   id: 1,
   email: "me@example.com",
+  species_name_language: "en",
   expires_at: new Date(Date.now() + 86400_000).toISOString(),
   ...overrides,
 });

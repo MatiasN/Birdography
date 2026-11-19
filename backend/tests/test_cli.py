@@ -276,3 +276,23 @@ def test_drop_root_leaves_others_alone(monkeypatch, euid, puid):
         monkeypatch.delenv("PUID", raising=False)
     cli.drop_root()
     assert fake.calls == []
+
+
+def test_merge_species(monkeypatch, capsys, client):
+    mine = client.post("/species", json={"scientific_name": "Robinia fakeus", "name_en": "My robin"}).json()
+    ebird = client.post(
+        "/species", json={"scientific_name": "Erithacus rubecula", "name_en": "European Robin", "ebird_code": "eurrob1"}
+    ).json()
+    photo = client.post(
+        "/photos", files={"file": ("b.jpg", make_jpeg(), "image/jpeg")}, data={"species_ids": [str(mine["id"])]}
+    ).json()
+    out = run(monkeypatch, capsys, "merge-species", str(mine["id"]), str(ebird["id"]))
+    assert out.strip() == "Moved 1 photos from Robinia fakeus to Erithacus rubecula; Robinia fakeus is in the trash"
+    assert client.get(f"/photos/{photo['id']}").json()["species_ids"] == [ebird["id"]]
+
+    with pytest.raises(SystemExit, match=f"No species with id {mine['id']}"):  # in the trash now
+        run(monkeypatch, capsys, "merge-species", str(mine["id"]), str(ebird["id"]))
+    with pytest.raises(SystemExit, match="No species with id 999"):
+        run(monkeypatch, capsys, "merge-species", str(ebird["id"]), "999")
+    with pytest.raises(SystemExit, match="must be one added by hand"):
+        run(monkeypatch, capsys, "merge-species", str(ebird["id"]), str(ebird["id"]))

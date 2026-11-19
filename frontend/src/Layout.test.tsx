@@ -3,7 +3,23 @@ import userEvent from "@testing-library/user-event";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import Layout from "@/Layout";
-import { me, mockApi, type Routes } from "@/test/api";
+import { useLayout } from "@/hooks/useLayout";
+import { useSpeciesNames } from "@/hooks/useSpeciesNames";
+import { makeSpecies, me, mockApi, type Routes } from "@/test/api";
+
+/** A page that shows a species name in the user's language and can change the user, as the profile does. */
+function NamesPage() {
+  const { user, setUser } = useLayout();
+  const { name } = useSpeciesNames();
+  return (
+    <>
+      <p>Name: {name(makeSpecies())}</p>
+      <button type="button" onClick={() => setUser({ ...user, species_name_language: "sci" })}>
+        Scientific
+      </button>
+    </>
+  );
+}
 
 function renderLayout(entry = "/") {
   const router = createMemoryRouter(
@@ -15,6 +31,7 @@ function renderLayout(entry = "/") {
           { path: "/", element: <p>Photos page</p> },
           { path: "/map", element: <p>Map page</p> },
           { path: "/profile", element: <p>Profile page</p> },
+          { path: "/names", element: <NamesPage /> },
         ],
       },
     ],
@@ -25,6 +42,14 @@ function renderLayout(entry = "/") {
 }
 
 describe("Layout", () => {
+  it("gives the pages species names in the user's language, and follows a change", async () => {
+    mockApi({ "GET /auth/me": { body: me({ species_name_language: "pt" }) } });
+    renderLayout("/names");
+    expect(await screen.findByText("Name: Garça-real")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Scientific" }));
+    expect(screen.getByText("Name: Ardea cinerea")).toBeInTheDocument();
+  });
+
   it("shows the page, with the five tabs in the sidebar and in the bottom bar", async () => {
     mockApi({ "GET /auth/me": { body: me() } });
     renderLayout("/map");
