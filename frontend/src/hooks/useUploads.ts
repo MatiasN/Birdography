@@ -42,15 +42,17 @@ export type Uploads = {
   items: UploadItem[];
   /** Species for every file still waiting, and for files added later. */
   batch: Species[];
+  /** The server's size limits, once known (from /health). */
+  limits: Health["limits"] | null;
   /** Queue files; those over the limits fail at once, without being sent. */
-  add: (files: File[], limits: Health["limits"] | null) => void;
+  add: (files: File[]) => void;
   addBatchSpecies: (species: Species) => void;
   removeBatchSpecies: (id: number) => void;
   /** A file's species; while it is being sent they can't change (the row doesn't offer it). */
   setSpecies: (item: UploadItem, species: Species[]) => void;
   retry: (key: number) => void;
   /** Split a pair that hasn't been sent (waiting, held, or failed) into two files, each uploaded on its own. */
-  unpair: (key: number, limits: Health["limits"] | null) => void;
+  unpair: (key: number) => void;
   /** Upload a pair whose files look like different shots as one photo all the same. */
   keepPair: (key: number) => void;
   /** Drop the files that are done or failed from the list. */

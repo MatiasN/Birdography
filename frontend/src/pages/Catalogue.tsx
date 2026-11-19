@@ -4,12 +4,12 @@ import { Link, useSearchParams } from "react-router-dom";
 import EmptyState from "@/components/EmptyState";
 import FilterBar from "@/components/FilterBar";
 import ResponsivePanel from "@/components/ResponsivePanel";
-import { Alert, AlertTitle } from "@/components/ui/alert";
+import ErrorAlert from "@/components/ErrorAlert";
 import { Button } from "@/components/ui/button";
 import { usePhotoParam } from "@/hooks/usePhotoParam";
 import { apiQuery, hasFilters, NO_FILTERS, readFilters, writeFilters, type Filters } from "@/lib/filters";
 import { cn } from "cn";
-import { api, photoTitle, photoUrl, takenDate, type Camera, type Photo, type Species, type Summary } from "@/api";
+import { api, fileUrl, photoTitle, takenDate, type Camera, type Photo, type Species, type Summary } from "@/api";
 import { useSpeciesNames } from "@/hooks/useSpeciesNames";
 
 // Loaded when a photo is first opened: its position map brings Leaflet, which the grid itself doesn't need.
@@ -35,7 +35,7 @@ function Tile({ photo, selected, onOpen }: { photo: Photo; selected: boolean; on
       )}
     >
       <span className="relative block">
-        <img src={photoUrl(photo)} alt="" loading="lazy" className="aspect-square w-full bg-muted object-cover" />
+        <img src={fileUrl(photo.id)} alt="" loading="lazy" className="aspect-square w-full bg-muted object-cover" />
         {photo.lat === null && (
           <span className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-md bg-background/90 px-1.5 py-0.5 text-xs font-medium text-warning shadow-xs">
             <MapPinOffIcon className="size-3" aria-hidden="true" />
@@ -213,11 +213,7 @@ export default function Catalogue() {
         )}
         {count && <p className="text-sm text-muted-foreground md:hidden">{count}</p>}
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertTitle>{error}</AlertTitle>
-          </Alert>
-        )}
+        <ErrorAlert message={error} />
 
         {empty && !filtering && (
           <EmptyState

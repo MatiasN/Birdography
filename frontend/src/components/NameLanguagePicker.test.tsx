@@ -1,14 +1,26 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { createMemoryRouter, Outlet, RouterProvider } from "react-router-dom";
 import type { User } from "@/api";
+import type { LayoutContext } from "@/hooks/useLayout";
+import { NameLanguageContext } from "@/hooks/useSpeciesNames";
 import NameLanguagePicker from "@/components/NameLanguagePicker";
 import { me, mockApi } from "@/test/api";
 
+/** The picker inside a parent that provides what Layout gives its pages; returns the `setUser` it gets. */
 function renderPicker(user = me()) {
-  const onChange = vi.fn<(user: User) => void>();
-  render(<NameLanguagePicker user={user} onChange={onChange} />);
-  return onChange;
+  const setUser = vi.fn<(user: User) => void>();
+  const context: LayoutContext = { user, setUser, logout: vi.fn<() => Promise<void>>() };
+  const router = createMemoryRouter([
+    { element: <Outlet context={context} />, children: [{ path: "/", element: <NameLanguagePicker /> }] },
+  ]);
+  render(
+    <NameLanguageContext value={user.species_name_language}>
+      <RouterProvider router={router} />
+    </NameLanguageContext>,
+  );
+  return setUser;
 }
 
 const example = () => screen.getByLabelText("Example");

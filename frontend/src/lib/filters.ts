@@ -1,3 +1,5 @@
+import { DATE_FORMAT } from "@/api";
+
 /**
  * The Catalogue's filters (plan 0008 §6), kept in the URL next to `?photo=`, so Back undoes a change and a link or
  * a reload keeps them: `?species=1,4&from=2026-01-01&to=2026-11-17&make=Nikon&model=Z%208&located=false`.
@@ -65,8 +67,7 @@ export function apiQuery(filters: Filters, extra: Record<string, string | number
 export const hasFilters = (filters: Filters) => apiQuery(filters) !== "";
 
 /** "14 Nov 2026" for a YYYY-MM-DD day, in the browser's language. */
-export const dayLabel = (value: string) =>
-  new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+export const dayLabel = (value: string) => new Date(`${value}T00:00:00`).toLocaleDateString(undefined, DATE_FORMAT);
 
 /** What the date filter's button says. */
 export function dateLabel({ from, to }: Pick<Filters, "from" | "to">): string {

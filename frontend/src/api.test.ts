@@ -8,10 +8,10 @@ import {
   speciesName,
   speciesOtherNames,
   ApiError,
-  hasFile,
   json,
   offsetLabel,
-  photoUrl,
+  fileUrl,
+  errorText,
   position,
   send,
   SESSION_EXPIRED,
@@ -43,12 +43,6 @@ describe("sizeProblem", () => {
 });
 
 describe("photo helpers", () => {
-  it("hasFile", () => {
-    const photo = makePhoto();
-    expect(hasFile(photo, "thumbnail")).toBe(true);
-    expect(hasFile(photo, "preview")).toBe(false);
-  });
-
   it("position needs both coordinates", () => {
     expect(position(makePhoto({ lat: 1, lon: 2 }))).toEqual([1, 2]);
     expect(position(makePhoto({ lat: 0, lon: 0 }))).toEqual([0, 0]);
@@ -56,9 +50,14 @@ describe("photo helpers", () => {
     expect(position(makePhoto({ lat: 1, lon: null }))).toBeNull();
   });
 
-  it("photoUrl defaults to the thumbnail", () => {
-    expect(photoUrl(makePhoto({ id: 7 }))).toBe("/api/photos/7/file?kind=thumbnail");
-    expect(photoUrl(makePhoto({ id: 7 }), "preview")).toBe("/api/photos/7/file?kind=preview");
+  it("fileUrl defaults to the thumbnail", () => {
+    expect(fileUrl(7)).toBe("/api/photos/7/file?kind=thumbnail");
+    expect(fileUrl(7, "preview")).toBe("/api/photos/7/file?kind=preview");
+  });
+
+  it("errorText takes the API's message, else the fallback", () => {
+    expect(errorText(new ApiError(400, "Unknown species"), "Could not save")).toBe("Unknown species");
+    expect(errorText(new TypeError("Failed to fetch"), "Could not save")).toBe("Could not save");
   });
 
   it("takenDate is the local date as recorded", () => {

@@ -139,7 +139,11 @@ describe("Layout", () => {
     await userEvent.click((await screen.findAllByRole("button", { name: "Account: me@example.com" }))[0]);
     await userEvent.click(screen.getByRole("menuitem", { name: "Log out" }));
     expect(await screen.findByText("Login page")).toBeInTheDocument();
-    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual(["GET /auth/me", "POST /auth/logout"]);
+    expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
+      "GET /auth/me",
+      "GET /health", // the upload limits, fetched by the upload queue
+      "POST /auth/logout",
+    ]);
     expect(router.state.location.pathname).toBe("/login");
   });
 });

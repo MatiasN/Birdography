@@ -486,9 +486,9 @@ function Separator() {
   const { items, add, unpair } = useUploads();
   return (
     <>
-      <button onClick={() => add([file("lone.nef", 1000, "")], null)}>add</button>
-      <button onClick={() => unpair(items[0]?.key ?? 0, null)}>separate first</button>
-      <button onClick={() => unpair(999, null)}>separate none</button>
+      <button onClick={() => add([file("lone.nef", 1000, "")])}>add</button>
+      <button onClick={() => unpair(items[0]?.key ?? 0)}>separate first</button>
+      <button onClick={() => unpair(999)}>separate none</button>
       <output>{items.map((i) => `${i.file.name}:${i.companion?.name ?? "-"}`).join(" ")}</output>
     </>
   );

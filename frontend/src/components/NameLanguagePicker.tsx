@@ -1,9 +1,11 @@
-import { useState } from "react";
-import { Alert, AlertTitle } from "@/components/ui/alert";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { api, ApiError, json, speciesName, speciesOtherNames, type NameLanguage, type Species, type User } from "@/api";
+import ErrorAlert from "@/components/ErrorAlert";
+import Segmented, { type SegmentedOption } from "@/components/Segmented";
+import SpeciesNames from "@/components/SpeciesNames";
+import { api, json, type NameLanguage, type Species, type User } from "@/api";
+import { useLayout } from "@/hooks/useLayout";
+import { useSave } from "@/hooks/useSave";
 
-const OPTIONS: { value: NameLanguage; label: string }[] = [
+const OPTIONS: SegmentedOption<NameLanguage>[] = [
   { value: "en", label: "English" },
   { value: "pt", label: "Portuguese" },
   { value: "sci", label: "Scientific" },
@@ -17,54 +19,29 @@ const EXAMPLE: Species = {
 };
 
 /** Which species name comes first everywhere (plan 0009 D16), saved to the account, with an example. */
-export default function NameLanguagePicker({ user, onChange }: { user: User; onChange: (user: User) => void }) {
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const language = user.species_name_language;
+export default function NameLanguagePicker() {
+  const { user, setUser } = useLayout();
+  const { saving, error, run } = useSave();
 
-  async function choose(value: string) {
-    const option = OPTIONS.find((o) => o.value === value);
-    if (!option || option.value === language) return; // Radix deselects on a second click; keep the choice
-    setSaving(true);
-    setError(null);
-    try {
-      onChange(await api<User>("/auth/me", json("PATCH", { species_name_language: option.value })));
-    } catch (problem) {
-      setError(problem instanceof ApiError ? problem.message : "Could not save the setting");
-    } finally {
-      setSaving(false);
-    }
-  }
+  const choose = (language: NameLanguage) =>
+    void run(
+      async () => setUser(await api<User>("/auth/me", json("PATCH", { species_name_language: language }))),
+      "Could not save the setting",
+    );
 
   return (
     <div className="space-y-3">
-      <ToggleGroup
-        type="single"
-        value={language}
-        onValueChange={(value) => void choose(value)}
+      <Segmented
+        options={OPTIONS}
+        value={user.species_name_language}
+        onChange={choose}
+        label="Species names"
         disabled={saving}
-        aria-label="Species names"
-        className="flex w-full rounded-lg bg-muted p-1"
-      >
-        {OPTIONS.map(({ value, label }) => (
-          <ToggleGroupItem
-            key={value}
-            value={value}
-            className="h-9 flex-1 rounded-md text-muted-foreground hover:bg-transparent data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-xs"
-          >
-            {label}
-          </ToggleGroupItem>
-        ))}
-      </ToggleGroup>
+      />
       <p className="rounded-lg border bg-background px-3 py-2" aria-label="Example">
-        <span className="block font-medium">{speciesName(EXAMPLE, language)}</span>
-        <span className="block text-xs text-muted-foreground">{speciesOtherNames(EXAMPLE, language)}</span>
+        <SpeciesNames species={EXAMPLE} />
       </p>
-      {error && (
-        <Alert variant="destructive">
-          <AlertTitle>{error}</AlertTitle>
-        </Alert>
-      )}
+      <ErrorAlert message={error} />
     </div>
   );
 }

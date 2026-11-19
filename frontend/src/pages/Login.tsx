@@ -1,12 +1,13 @@
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import ErrorAlert from "@/components/ErrorAlert";
 import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api, json } from "@/api";
+import { api, errorText, json } from "@/api";
 
 /** Only same-site paths: "/map" yes, "//evil.example" or full URLs no; otherwise the Catalogue. */
 const safePath = (next: string | null) => (next?.startsWith("/") && !next.startsWith("//") ? next : "/catalogue");
@@ -25,7 +26,7 @@ export default function Login() {
       await api("/auth/login", json("POST", { email, password }));
       await navigate(safePath(params.get("next")));
     } catch (problem) {
-      setError(problem instanceof Error ? problem.message : "Could not log in");
+      setError(errorText(problem, "Could not log in"));
     }
   }
 
@@ -82,11 +83,7 @@ export default function Login() {
                   </Button>
                 </div>
               </div>
-              {error && (
-                <Alert variant="destructive">
-                  <AlertTitle>{error}</AlertTitle>
-                </Alert>
-              )}
+              <ErrorAlert message={error} />
               <Button type="submit" className="w-full">
                 Log in
               </Button>

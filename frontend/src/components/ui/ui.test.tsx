@@ -5,7 +5,7 @@ import { render, screen } from "@testing-library/react";
 import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Alert, AlertTitle } from "@/components/ui/alert";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { Toggle } from "@/components/ui/toggle";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 
 describe("Button", () => {
@@ -66,7 +65,7 @@ describe("Badge", () => {
       </>,
     );
     expect(screen.getByText("Coming")).toHaveAttribute("data-variant", "outline");
-    expect(screen.getByText("Plain")).toHaveAttribute("data-variant", "default");
+    expect(screen.getByText("Plain")).toHaveAttribute("data-variant", "outline"); // the only variant left
     expect(screen.getByRole("link", { name: "Linked" })).toHaveAttribute("data-slot", "badge");
   });
 });
@@ -111,14 +110,12 @@ describe("Alert", () => {
       <>
         <Alert variant="destructive">
           <AlertTitle>Could not save</AlertTitle>
-          <AlertDescription>Try again</AlertDescription>
         </Alert>
         <Alert>plain</Alert>
       </>,
     );
     expect(screen.getAllByRole("alert")).toHaveLength(2);
     expect(screen.getByText("Could not save")).toBeInTheDocument();
-    expect(screen.getByText("Try again")).toBeInTheDocument();
   });
 });
 
@@ -139,13 +136,7 @@ describe("Avatar", () => {
   });
 });
 
-describe("Toggle and ToggleGroup", () => {
-  it("toggles on its own", async () => {
-    render(<Toggle aria-label="Bold">B</Toggle>);
-    await userEvent.click(screen.getByRole("button", { name: "Bold" }));
-    expect(screen.getByRole("button", { name: "Bold" })).toHaveAttribute("aria-pressed", "true");
-  });
-
+describe("ToggleGroup", () => {
   it("passes the group's variant and size to its items, or uses their own", async () => {
     render(
       <>

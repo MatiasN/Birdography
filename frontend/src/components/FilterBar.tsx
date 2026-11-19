@@ -1,5 +1,6 @@
 import { CalendarIcon, CameraIcon, ChevronDownIcon, MapPinIcon, XIcon, type LucideIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import Chip from "@/components/Chip";
 import SpeciesPicker from "@/components/SpeciesPicker";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -294,21 +295,13 @@ export default function FilterBar({ filters, onChange, cameras, species, onSpeci
             const known = species[id];
             const name = known ? names.name(known) : "…";
             return (
-              <li
+              <Chip
                 key={id}
-                className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-accent py-0.5 pr-0.5 pl-3 text-sm text-accent-foreground"
-              >
-                {name}
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="size-6 rounded-full"
-                  aria-label={`Remove ${name} from the filter`}
-                  onClick={() => set({ species: filters.species.filter((other) => other !== id) })}
-                >
-                  <XIcon />
-                </Button>
-              </li>
+                label={name}
+                removeLabel={`Remove ${name} from the filter`}
+                className="border-primary/40 bg-accent pl-3"
+                onRemove={() => set({ species: filters.species.filter((other) => other !== id) })}
+              />
             );
           })}
         </ul>

@@ -11,9 +11,9 @@ export const MAX_ZOOM = 19;
 export type Point = { id: number; lat: number; lon: number };
 
 /** A photo inside the index: its id and its place in the API's newest-first order. */
-export type Leaf = { photo: number; rank: number };
+type Leaf = { photo: number; rank: number };
 
-export type PhotoItem = { kind: "photo"; key: string; id: number; lat: number; lon: number };
+type PhotoItem = { kind: "photo"; key: string; id: number; lat: number; lon: number };
 export type GroupItem = {
   kind: "group";
   key: string;

@@ -12,8 +12,6 @@ import { pageTitle, TABS } from "@/nav";
 /** setTimeout saturates at 2^31-1 ms (~25 days); longer waits just re-check when the timer fires. */
 const MAX_DELAY_MS = 2 ** 31 - 1;
 
-/** What pages inside the layout get from it, through the router's outlet context. */
-
 function Logo({ className }: { className?: string }) {
   return <img src="/logo.svg" alt="" className={className} />;
 }
@@ -22,10 +20,10 @@ function Logo({ className }: { className?: string }) {
  * How many files are still waiting or being sent, so it shows from any tab: a number on the Upload tab's icon, and
  * for screen readers after the tab's name ("Upload, 3 in progress").
  */
-function UploadBadge({ to, spoken = false }: { to: string; spoken?: boolean }) {
+function UploadBadge({ spoken = false }: { spoken?: boolean }) {
   const { items } = useUploads();
   const count = items.filter(inProgress).length;
-  if (to !== "/upload" || count === 0) return null;
+  if (count === 0) return null;
   if (spoken) return <span className="sr-only">, {count} in progress</span>;
   return (
     <span
@@ -64,10 +62,10 @@ function Sidebar({ email, onLogout }: { email: string; onLogout: () => void }) {
           >
             <span className="relative">
               <Icon className="size-5" aria-hidden="true" />
-              <UploadBadge to={to} />
+              {to === "/upload" && <UploadBadge />}
             </span>
             {label}
-            <UploadBadge to={to} spoken />
+            {to === "/upload" && <UploadBadge spoken />}
           </NavLink>
         ))}
       </div>
@@ -105,11 +103,11 @@ function PhoneBars({ email, onLogout, title }: { email: string; onLogout: () => 
             <span className="grid h-7 w-14 place-items-center rounded-full group-aria-[current=page]:bg-accent">
               <span className="relative">
                 <Icon className="size-5" aria-hidden="true" />
-                <UploadBadge to={to} />
+                {to === "/upload" && <UploadBadge />}
               </span>
             </span>
             {label}
-            <UploadBadge to={to} spoken />
+            {to === "/upload" && <UploadBadge spoken />}
           </NavLink>
         ))}
       </nav>

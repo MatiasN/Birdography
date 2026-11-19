@@ -2,11 +2,13 @@ import "leaflet/dist/leaflet.css";
 import { GitMergeIcon, PlusIcon, XIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { CircleMarker, MapContainer, TileLayer, useMapEvents } from "react-leaflet";
-import { Alert, AlertTitle } from "@/components/ui/alert";
+import ErrorAlert from "@/components/ErrorAlert";
 import { Button } from "@/components/ui/button";
-import { api, ApiError, fileSize, json, offsetLabel, photoUrl, position, type Photo, type Species } from "@/api";
+import { api, fileSize, fileUrl, json, offsetLabel, position, type Photo, type Species } from "@/api";
+import { useSave } from "@/hooks/useSave";
 import { useSpeciesNames } from "@/hooks/useSpeciesNames";
 import InvalidateOnResize from "@/components/InvalidateOnResize";
+import SpeciesNames from "@/components/SpeciesNames";
 import SpeciesPicker from "@/components/SpeciesPicker";
 import { ATTRIBUTION, DEFAULT_CENTER, DEFAULT_ZOOM, OSM } from "@/map";
 
@@ -45,38 +47,24 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 /** The photo's species: shown, added with the picker and removed, each change saved at once. */
 function SpeciesSection({ photo, onChange }: Props) {
-  const { name, otherNames } = useSpeciesNames();
+  const { name } = useSpeciesNames();
   const [adding, setAdding] = useState(false);
   const [merging, setMerging] = useState<number | null>(null); // the hand-added species being merged
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { saving, error, run } = useSave();
 
-  async function save(ids: number[]) {
-    setSaving(true);
-    setError(null);
-    try {
-      onChange(await api<Photo>(`/photos/${photo.id}`, json("PATCH", { species_ids: ids })));
-    } catch (problem) {
-      setError(problem instanceof ApiError ? problem.message : "Could not save the species");
-    } finally {
-      setSaving(false);
-    }
-  }
+  const save = (ids: number[]) =>
+    run(
+      async () => onChange(await api<Photo>(`/photos/${photo.id}`, json("PATCH", { species_ids: ids }))),
+      "Could not save the species",
+    );
 
   /** Merge a hand-added species into the one it really is (plan 0009 D11a), then show the photo as it is now. */
-  async function merge(source: Species, target: Species) {
-    setSaving(true);
-    setError(null);
-    try {
+  const merge = (source: Species, target: Species) =>
+    run(async () => {
       await api<Species>(`/species/${source.id}/merge-into/${target.id}`, { method: "POST" });
       setMerging(null);
       onChange(await api<Photo>(`/photos/${photo.id}`));
-    } catch (problem) {
-      setError(problem instanceof ApiError ? problem.message : "Could not merge the species");
-    } finally {
-      setSaving(false);
-    }
-  }
+    }, "Could not merge the species");
 
   return (
     <section className="space-y-2">
@@ -88,10 +76,7 @@ function SpeciesSection({ photo, onChange }: Props) {
           {photo.species.map((species) => (
             <li key={species.id} className="rounded-lg border bg-background px-3 py-2">
               <div className="flex items-center gap-3">
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{name(species)}</span>
-                  <span className="block truncate text-xs text-muted-foreground">{otherNames(species)}</span>
-                </span>
+                <SpeciesNames species={species} className="flex-1" />
                 {species.ebird_code === null && (
                   <Button
                     variant="ghost"
@@ -157,11 +142,7 @@ function SpeciesSection({ photo, onChange }: Props) {
         </Button>
       )}
 
-      {error && (
-        <Alert variant="destructive">
-          <AlertTitle>{error}</AlertTitle>
-        </Alert>
-      )}
+      <ErrorAlert message={error} />
     </section>
   );
 }
@@ -169,22 +150,14 @@ function SpeciesSection({ photo, onChange }: Props) {
 /** Metadata of one photo and a map to set where it was taken when the camera did not know. */
 export default function PhotoDetail({ photo, onChange }: Props) {
   const [pick, setPick] = useState<Point | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { saving, error, run } = useSave();
 
-  async function save(point: Point | null) {
-    setSaving(true);
-    setError(null);
-    try {
+  const save = (point: Point | null) =>
+    run(async () => {
       const body = point ? { lat: point.lat, lon: point.lon } : { lat: null, lon: null };
       onChange(await api<Photo>(`/photos/${photo.id}`, json("PATCH", body)));
       setPick(null);
-    } catch (problem) {
-      setError(problem instanceof ApiError ? problem.message : "Could not save the position");
-    } finally {
-      setSaving(false);
-    }
-  }
+    }, "Could not save the position");
 
   const current = position(photo);
   const center = current ?? DEFAULT_CENTER;
@@ -199,7 +172,7 @@ export default function PhotoDetail({ photo, onChange }: Props) {
 
   return (
     <div>
-      <img src={photoUrl(photo, "preview")} alt="" className="aspect-[3/2] w-full bg-muted object-contain" />
+      <img src={fileUrl(photo.id, "preview")} alt="" className="aspect-[3/2] w-full bg-muted object-contain" />
 
       <div className="space-y-6 p-4 text-sm">
         <SpeciesSection photo={photo} onChange={onChange} />
@@ -251,11 +224,7 @@ export default function PhotoDetail({ photo, onChange }: Props) {
             </MapContainer>
           </div>
 
-          {error && (
-            <Alert variant="destructive">
-              <AlertTitle>{error}</AlertTitle>
-            </Alert>
-          )}
+          <ErrorAlert message={error} />
 
           <div className="flex flex-wrap gap-2">
             <Button disabled={!pick || saving} onClick={pick ? () => void save(pick) : undefined}>

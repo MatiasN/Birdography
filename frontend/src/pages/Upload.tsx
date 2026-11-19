@@ -7,43 +7,25 @@ import {
   RotateCwIcon,
   TriangleAlertIcon,
   UnlinkIcon,
-  XIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useRef, useState, type DragEvent } from "react";
 import { Link } from "react-router-dom";
+import Chip from "@/components/Chip";
 import SpeciesPicker from "@/components/SpeciesPicker";
 import { Button } from "@/components/ui/button";
 import { heldForPair, inProgress, useUploads, type UploadItem } from "@/hooks/useUploads";
-import { api, fileSize, IMAGE_EXTENSIONS, type Health, type Species } from "@/api";
+import { fileSize, IMAGE_EXTENSIONS } from "@/api";
 import { useSpeciesNames } from "@/hooks/useSpeciesNames";
 import { cn } from "cn";
 
 const ACCEPT = IMAGE_EXTENSIONS.map((ext) => `.${ext}`).join(",");
 
-/** A species on a file or on the batch, with its remove button unless it can't change any more. */
-function Chip({ species, onRemove, small }: { species: Species; onRemove?: () => void; small?: boolean }) {
-  const { name } = useSpeciesNames();
+/** The photo's details in the catalogue: an uploaded file, or the copy a duplicate matched. */
+function OpenLink({ id }: { id: number | undefined }) {
   return (
-    <li
-      className={cn(
-        "inline-flex items-center gap-1 rounded-full border bg-background pr-0.5 pl-2.5 text-accent-foreground",
-        small ? "py-0 text-xs" : "py-0.5 text-sm",
-        !onRemove && "pr-2.5",
-      )}
-    >
-      {name(species)}
-      {onRemove && (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className={cn("rounded-full", small ? "size-5" : "size-6")}
-          aria-label={`Remove ${name(species)}`}
-          onClick={onRemove}
-        >
-          <XIcon />
-        </Button>
-      )}
-    </li>
+    <Button asChild variant="link" size="sm" className="h-auto px-0">
+      <Link to={`/catalogue?photo=${id}`}>Open</Link>
+    </Button>
   );
 }
 
@@ -69,16 +51,12 @@ function Status({ item }: { item: UploadItem }) {
   }
   if (item.status === "done") {
     return (
-      <span className="flex flex-col items-end gap-1 text-right">
-        <span className="flex items-center gap-2">
-          <span className="inline-flex items-center gap-1 text-success">
-            <CheckIcon className="size-4" aria-hidden="true" />
-            Done
-          </span>
-          <Button asChild variant="link" size="sm" className="h-auto px-0">
-            <Link to={`/catalogue?photo=${item.photo?.id}`}>Open</Link>
-          </Button>
+      <span className="flex items-center gap-2">
+        <span className="inline-flex items-center gap-1 text-success">
+          <CheckIcon className="size-4" aria-hidden="true" />
+          Done
         </span>
+        <OpenLink id={item.photo?.id} />
       </span>
     );
   }
@@ -88,11 +66,7 @@ function Status({ item }: { item: UploadItem }) {
         <CircleAlertIcon className="size-4 shrink-0" aria-hidden="true" />
         {item.problem}
       </span>
-      {item.existingId !== null && (
-        <Button asChild variant="link" size="sm" className="h-auto px-0">
-          <Link to={`/catalogue?photo=${item.existingId}`}>Open</Link>
-        </Button>
-      )}
+      {item.existingId !== null && <OpenLink id={item.existingId} />}
       {item.retryable && (
         <Button variant="outline" size="sm" onClick={() => retry(item.key)}>
           <RotateCwIcon />
@@ -141,9 +115,10 @@ function PairNotice({ item, onSeparate }: { item: UploadItem; onSeparate: () => 
   );
 }
 
-function Row({ item, limits }: { item: UploadItem; limits: Health["limits"] | null }) {
+function Row({ item }: { item: UploadItem }) {
+  const { name } = useSpeciesNames();
   const { setSpecies, unpair } = useUploads();
-  const separate = () => unpair(item.key, limits);
+  const separate = () => unpair(item.key);
   const [adding, setAdding] = useState(false);
   // Species go with the file; while it is being sent they can't change, and a refused file has no photo to change.
   const editable = item.status === "waiting" || item.status === "done" || (item.status === "failed" && item.retryable);
@@ -186,7 +161,7 @@ function Row({ item, limits }: { item: UploadItem; limits: Health["limits"] | nu
                 <Chip
                   key={species.id}
                   small
-                  species={species}
+                  label={name(species)}
                   onRemove={
                     editable
                       ? () =>
@@ -248,17 +223,10 @@ function Row({ item, limits }: { item: UploadItem; limits: Health["limits"] | nu
  * and watch each file go. The queue itself lives in UploadsProvider, so it keeps going on other tabs.
  */
 export default function Upload() {
-  const { items, batch, add, addBatchSpecies, removeBatchSpecies, clearFinished } = useUploads();
-  const [limits, setLimits] = useState<Health["limits"] | null>(null);
+  const { items, batch, limits, add, addBatchSpecies, removeBatchSpecies, clearFinished } = useUploads();
+  const { name } = useSpeciesNames();
   const [dragging, setDragging] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    void api<Health>("/health").then(
-      (health) => setLimits(health.limits),
-      () => undefined,
-    );
-  }, []);
 
   const done = items.filter((item) => item.status === "done").length;
   const held = items.filter(
@@ -269,7 +237,7 @@ export default function Upload() {
   function drop(event: DragEvent) {
     event.preventDefault();
     setDragging(false);
-    add([...event.dataTransfer.files], limits);
+    add([...event.dataTransfer.files]);
   }
 
   return (
@@ -327,7 +295,7 @@ export default function Upload() {
           hidden
           data-testid="file-input"
           onChange={(event) => {
-            add([...(event.target.files ?? [])], limits);
+            add([...(event.target.files ?? [])]);
             event.target.value = "";
           }}
         />
@@ -343,7 +311,7 @@ export default function Upload() {
         {batch.length > 0 && (
           <ul aria-label="Species for every photo in this batch" className="flex flex-wrap gap-2">
             {batch.map((species) => (
-              <Chip key={species.id} species={species} onRemove={() => removeBatchSpecies(species.id)} />
+              <Chip key={species.id} label={name(species)} onRemove={() => removeBatchSpecies(species.id)} />
             ))}
           </ul>
         )}
@@ -370,7 +338,7 @@ export default function Upload() {
       {items.length > 0 && (
         <ul aria-label="Files" className="divide-y rounded-xl border bg-card px-4 text-card-foreground">
           {items.map((item) => (
-            <Row key={item.key} item={item} limits={limits} />
+            <Row key={item.key} item={item} />
           ))}
         </ul>
       )}

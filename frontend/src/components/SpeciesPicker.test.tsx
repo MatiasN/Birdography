@@ -1,7 +1,8 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import SidePanel from "@/components/SidePanel";
+import ResponsivePanel from "@/components/ResponsivePanel";
+import { stubMatchMedia } from "@/test/media";
 import SpeciesPicker, { draftFrom } from "@/components/SpeciesPicker";
 import { makeSpecies, mockApi } from "@/test/api";
 import type { Species } from "@/api";
@@ -87,10 +88,11 @@ describe("SpeciesPicker", () => {
   it("Escape closes the list but not the panel around it; a second Escape does", async () => {
     mockApi({ [search("her")]: { body: [HERON] } });
     const onClose = vi.fn<() => void>();
+    stubMatchMedia(false, true); // the side panel, which closes on Escape itself
     render(
-      <SidePanel title="Photo details" onClose={onClose}>
+      <ResponsivePanel title="Photo details" onClose={onClose}>
         <SpeciesPicker onPick={() => undefined} />
-      </SidePanel>,
+      </ResponsivePanel>,
     );
     await userEvent.type(screen.getByRole("combobox"), "her");
     await screen.findByRole("listbox");

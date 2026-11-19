@@ -1,7 +1,7 @@
 /** Light, dark, or whatever the device uses. Stored per device (plan 0007 D3), not per account. */
 export type Theme = "system" | "light" | "dark";
 
-export const THEMES: readonly Theme[] = ["system", "light", "dark"];
+const THEMES: readonly Theme[] = ["system", "light", "dark"];
 const KEY = "theme"; // the same key public/theme.js reads before the app loads
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 

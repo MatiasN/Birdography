@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stubMatchMedia } from "@/test/media";
 import EmptyState from "@/components/EmptyState";
 import ResponsivePanel from "@/components/ResponsivePanel";
-import SidePanel from "@/components/SidePanel";
 import ThemePicker from "@/components/ThemePicker";
 
 describe("ThemePicker", () => {
@@ -45,12 +44,14 @@ describe("ThemePicker", () => {
   });
 });
 
-describe("SidePanel", () => {
+describe("ResponsivePanel on wide screens", () => {
+  beforeEach(() => stubMatchMedia(false, true));
+
   it("shows its title, actions and content as a labelled region", () => {
     render(
-      <SidePanel title="12 photos here" onClose={() => undefined} actions={<button>Zoom in</button>}>
+      <ResponsivePanel title="12 photos here" onClose={() => undefined} actions={<button>Zoom in</button>}>
         <p>thumbnails</p>
-      </SidePanel>,
+      </ResponsivePanel>,
     );
     const panel = screen.getByRole("complementary", { name: "12 photos here" });
     expect(panel).toHaveTextContent("thumbnails");
@@ -61,26 +62,14 @@ describe("SidePanel", () => {
   it("closes with the Close button and Escape", async () => {
     const onClose = vi.fn<() => void>();
     render(
-      <SidePanel title="Photo" onClose={onClose}>
+      <ResponsivePanel title="Photo" onClose={onClose}>
         x
-      </SidePanel>,
+      </ResponsivePanel>,
     );
     await userEvent.click(screen.getByRole("button", { name: "Close" }));
     await userEvent.keyboard("{Escape}");
     await userEvent.keyboard("a");
     expect(onClose).toHaveBeenCalledTimes(2);
-  });
-
-  it("leaves Escape to someone else when asked", async () => {
-    const onClose = vi.fn<() => void>();
-    const { unmount } = render(
-      <SidePanel title="Photo" onClose={onClose} closeOnEscape={false}>
-        x
-      </SidePanel>,
-    );
-    await userEvent.keyboard("{Escape}");
-    expect(onClose).not.toHaveBeenCalled();
-    unmount();
   });
 });
 

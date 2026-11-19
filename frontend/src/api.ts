@@ -114,8 +114,6 @@ export function sizeProblem(file: File, limits: Health["limits"]): string | null
 export const position = (photo: Photo): [number, number] | null =>
   photo.lat !== null && photo.lon !== null ? [photo.lat, photo.lon] : null;
 
-export const hasFile = (photo: Photo, kind: PhotoFile["kind"]) => photo.files.some((f) => f.kind === kind);
-
 export class ApiError extends Error {
   status: number;
   /** The whole error body, for the extra fields some answers carry (a 409's `species_id` or `photo_id`). */
@@ -127,6 +125,10 @@ export class ApiError extends Error {
     this.body = body;
   }
 }
+
+/** What to tell the user about a failed request: the API's message, or `fallback` (a lost connection). */
+export const errorText = (problem: unknown, fallback: string) =>
+  problem instanceof ApiError ? problem.message : fallback;
 
 /** FastAPI's `detail`: a string, or for validation errors (422) a list of `{msg}`. */
 function errorMessage(detail: unknown): string | null {
@@ -198,6 +200,9 @@ export function uploadFile(
   });
 }
 
+/** "14 Nov 2026", in the browser's language. */
+export const DATE_FORMAT: Intl.DateTimeFormatOptions = { day: "numeric", month: "short", year: "numeric" };
+
 /** 52.3 MB, 840 KB. */
 export const fileSize = (bytes: number) =>
   bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -216,7 +221,6 @@ export const json = (method: string, body: unknown): RequestInit => ({
 /** Smallest browser-viewable file; the API falls back to larger kinds and finally the original. */
 export const fileUrl = (photoId: number, kind: PhotoFile["kind"] = "thumbnail") =>
   `/api/photos/${photoId}/file?kind=${kind}`;
-export const photoUrl = (photo: Photo, kind: PhotoFile["kind"] = "thumbnail") => fileUrl(photo.id, kind);
 
 /** The date the photo was taken as the camera (or the user) recorded it, without time zone shifts. */
 export const takenDate = (photo: Photo) =>

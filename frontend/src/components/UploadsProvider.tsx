@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import {
   api,
   ApiError,
+  errorText,
   isJpeg,
   isRaw,
   json,
@@ -46,6 +47,9 @@ function failure(problem: unknown): Partial<UploadItem> {
   return { status: "failed", problem: problem.message, retryable: problem.status >= 500 || problem.status === 401 };
 }
 
+/** An object URL to show the file with, for the types an <img> can show. */
+const preview = (file: File) => (SHOWN.test(file.type) ? URL.createObjectURL(file) : null);
+
 const withSpecies = (list: Species[], species: Species) =>
   list.some((s) => s.id === species.id) ? list : [...list, species];
 
@@ -56,6 +60,7 @@ const withSpecies = (list: Species[], species: Species) =>
 export default function UploadsProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<UploadItem[]>([]);
   const [batch, setBatch] = useState<Species[]>([]);
+  const [limits, setLimits] = useState<Health["limits"] | null>(null);
   const nextKey = useRef(1);
   const started = useRef(new Set<number>());
 
@@ -84,6 +89,17 @@ export default function UploadsProvider({ children }: { children: ReactNode }) {
     }
   }, [items, update]);
 
+  // Fetched once the user is logged in (this sits in the layout), so the limits are known before files are dropped.
+  useEffect(() => {
+    void api<Health>("/health").then(
+      (health) => setLimits(health.limits),
+      () => undefined,
+    );
+  }, []);
+
+  /** Why the file can't be sent, checked against the server's limits; null while they are not known. */
+  const sizeCheck = useCallback((file: File) => (limits ? sizeProblem(file, limits) : null), [limits]);
+
   const busy = items.some(inProgress);
   useEffect(() => {
     if (!busy) return undefined;
@@ -93,14 +109,13 @@ export default function UploadsProvider({ children }: { children: ReactNode }) {
   }, [busy]);
 
   const newItem = useCallback(
-    (file: File, companion: File | null, limits: Health["limits"] | null): UploadItem => {
-      const problems = [file, ...(companion ? [companion] : [])].map((f) => limits && sizeProblem(f, limits));
-      const shown = companion ?? file; // a pair's JPEG stands in for the RAW, which the browser can't show
+    (file: File, companion: File | null): UploadItem => {
+      const problems = [file, ...(companion ? [companion] : [])].map(sizeCheck);
       return {
         key: nextKey.current++,
         file,
         companion,
-        preview: SHOWN.test(shown.type) ? URL.createObjectURL(shown) : null,
+        preview: preview(companion ?? file), // a pair's JPEG stands in for the RAW, which the browser can't show
         species: batch,
         status: problems.some(Boolean) ? "failed" : "waiting",
         progress: 0,
@@ -113,7 +128,7 @@ export default function UploadsProvider({ children }: { children: ReactNode }) {
         speciesProblem: null,
       };
     },
-    [batch],
+    [batch, sizeCheck],
   );
 
   /** Compare a pair's files and record the outcome, unless the pair was separated or changed meanwhile. */
@@ -128,7 +143,7 @@ export default function UploadsProvider({ children }: { children: ReactNode }) {
    * photo, the JPEG becoming its preview. A JPEG also joins a RAW with its name that is still waiting from before.
    */
   const add = useCallback<Uploads["add"]>(
-    (files, limits) => {
+    (files) => {
       const jpegs = new Map(files.filter(isJpeg).map((file) => [stem(file), file]));
       const waitingRaws = new Map(
         items
@@ -147,19 +162,19 @@ export default function UploadsProvider({ children }: { children: ReactNode }) {
       for (const file of files) {
         if (paired.has(file)) continue; // goes with its RAW
         if (isRaw(file)) {
-          added.push(newItem(file, jpegs.get(stem(file)) ?? null, limits));
+          added.push(newItem(file, jpegs.get(stem(file)) ?? null));
           continue;
         }
         const raw = isJpeg(file) ? waitingRaws.get(stem(file)) : undefined;
         if (raw === undefined || joins.has(raw.key)) {
-          added.push(newItem(file, null, limits));
+          added.push(newItem(file, null));
           continue;
         }
-        const problem = limits && sizeProblem(file, limits);
+        const problem = sizeCheck(file);
         joinedPairs.push([raw.key, raw.file, file]);
         joins.set(raw.key, {
           companion: file,
-          preview: SHOWN.test(file.type) ? URL.createObjectURL(file) : null,
+          preview: preview(file),
           problem,
           status: problem ? "failed" : "waiting",
           pairCheck: "checking",
@@ -170,36 +185,39 @@ export default function UploadsProvider({ children }: { children: ReactNode }) {
       for (const i of added) if (i.companion) check(i.key, i.file, i.companion);
       for (const [key, raw, jpeg] of joinedPairs) check(key, raw, jpeg);
     },
-    [items, newItem, check],
+    [items, newItem, check, sizeCheck],
   );
 
-  const unpair = useCallback<Uploads["unpair"]>((key, limits) => {
-    const jpegKey = nextKey.current++;
-    setItems((list) => {
-      const pair = list.find((i) => i.key === key);
-      if (!pair?.companion || pair.status === "uploading" || pair.status === "done") return list;
-      // Each file on its own, checked against its own limit again: a pair can fail on its JPEG alone.
-      const single = (file: File, extra: Partial<UploadItem>): UploadItem => {
-        const problem = limits && sizeProblem(file, limits);
-        return {
-          ...pair,
-          ...extra,
-          file,
-          companion: null,
-          pairCheck: null,
-          pairKept: false,
-          status: problem ? "failed" : "waiting",
-          problem,
-          retryable: false,
-          progress: 0,
+  const unpair = useCallback<Uploads["unpair"]>(
+    (key) => {
+      const jpegKey = nextKey.current++;
+      setItems((list) => {
+        const pair = list.find((i) => i.key === key);
+        if (!pair?.companion || pair.status === "uploading" || pair.status === "done") return list;
+        // Each file on its own, checked against its own limit again: a pair can fail on its JPEG alone.
+        const single = (file: File, extra: Partial<UploadItem>): UploadItem => {
+          const problem = sizeCheck(file);
+          return {
+            ...pair,
+            ...extra,
+            file,
+            companion: null,
+            pairCheck: null,
+            pairKept: false,
+            status: problem ? "failed" : "waiting",
+            problem,
+            retryable: false,
+            progress: 0,
+          };
         };
-      };
-      const raw = single(pair.file, { preview: null });
-      const jpeg = single(pair.companion, { key: jpegKey });
-      return list.flatMap((i) => (i === pair ? [raw, jpeg] : [i]));
-    });
-    started.current.delete(key);
-  }, []);
+        const raw = single(pair.file, { preview: null });
+        const jpeg = single(pair.companion, { key: jpegKey });
+        return list.flatMap((i) => (i === pair ? [raw, jpeg] : [i]));
+      });
+      started.current.delete(key);
+    },
+    [sizeCheck],
+  );
 
   const keepPair = useCallback((key: number) => update(key, { pairKept: true }), [update]);
 
@@ -229,10 +247,7 @@ export default function UploadsProvider({ children }: { children: ReactNode }) {
       const ids = species.map((s) => s.id);
       api<Photo>(`/photos/${item.photo.id}`, json("PATCH", { species_ids: ids })).then(
         (photo) => update(key, { photo, species: photo.species, speciesProblem: null }),
-        (problem: unknown) =>
-          update(key, {
-            speciesProblem: problem instanceof ApiError ? problem.message : "Could not save the species",
-          }),
+        (problem: unknown) => update(key, { speciesProblem: errorText(problem, "Could not save the species") }),
       );
     },
     [update],
@@ -255,6 +270,7 @@ export default function UploadsProvider({ children }: { children: ReactNode }) {
     () => ({
       items,
       batch,
+      limits,
       add,
       addBatchSpecies,
       removeBatchSpecies,
@@ -264,7 +280,19 @@ export default function UploadsProvider({ children }: { children: ReactNode }) {
       keepPair,
       clearFinished,
     }),
-    [items, batch, add, addBatchSpecies, removeBatchSpecies, setSpecies, retry, unpair, keepPair, clearFinished],
+    [
+      items,
+      batch,
+      limits,
+      add,
+      addBatchSpecies,
+      removeBatchSpecies,
+      setSpecies,
+      retry,
+      unpair,
+      keepPair,
+      clearFinished,
+    ],
   );
   return <UploadsContext value={value}>{children}</UploadsContext>;
 }

@@ -10,40 +10,34 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useLayout } from "@/hooks/useLayout";
-import { ApiError, json, send } from "@/api";
+import { DATE_FORMAT, json, send } from "@/api";
+import { useSave } from "@/hooks/useSave";
+import ErrorAlert from "@/components/ErrorAlert";
 
-const dateText = (iso: string) =>
-  new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+const dateText = (iso: string) => new Date(iso).toLocaleDateString(undefined, DATE_FORMAT);
 
 /** Change the password. Every other session of the account ends; this one continues with a fresh cookie. */
 function PasswordCard() {
   const [current, setCurrent] = useState("");
   const [fresh, setFresh] = useState("");
   const [repeat, setRepeat] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const { saving, error, setError, run } = useSave();
   const [done, setDone] = useState(false);
 
-  async function submit(event: FormEvent) {
+  function submit(event: FormEvent) {
     event.preventDefault();
     setDone(false);
     if (fresh !== repeat) {
       setError("The new passwords do not match");
       return;
     }
-    setSaving(true);
-    setError("");
-    try {
+    void run(async () => {
       await send("/auth/password", json("POST", { current_password: current, new_password: fresh }));
       setCurrent("");
       setFresh("");
       setRepeat("");
       setDone(true);
-    } catch (problem) {
-      setError(problem instanceof ApiError ? problem.message : "Could not change the password");
-    } finally {
-      setSaving(false);
-    }
+    }, "Could not change the password");
   }
 
   return (
@@ -55,7 +49,7 @@ function PasswordCard() {
         <CardDescription>At least 10 characters. Your other devices will be logged out.</CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={(event) => void submit(event)} className="space-y-4">
+        <form onSubmit={submit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="current-password">Current password</Label>
             <Input
@@ -90,11 +84,7 @@ function PasswordCard() {
               required
             />
           </div>
-          {error && (
-            <Alert variant="destructive">
-              <AlertTitle>{error}</AlertTitle>
-            </Alert>
-          )}
+          <ErrorAlert message={error} />
           {done && (
             <Alert>
               <AlertTitle className="text-success">Password changed.</AlertTitle>
@@ -111,7 +101,7 @@ function PasswordCard() {
 
 /** The account: who is logged in, the theme, species names, the password and logging out (plan 0007 §5.1). */
 export default function Profile() {
-  const { user, setUser, logout } = useLayout();
+  const { user, logout } = useLayout();
   return (
     <div className="p-4 md:p-6 xl:p-8">
       <div className="mx-auto max-w-2xl space-y-6">
@@ -146,7 +136,7 @@ export default function Profile() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <NameLanguagePicker user={user} onChange={setUser} />
+            <NameLanguagePicker />
           </CardContent>
         </Card>
         <PasswordCard />

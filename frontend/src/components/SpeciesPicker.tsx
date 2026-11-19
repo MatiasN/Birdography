@@ -1,16 +1,17 @@
 import { PlusIcon, SearchIcon, XIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { Alert, AlertTitle } from "@/components/ui/alert";
+import ErrorAlert from "@/components/ErrorAlert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { api, ApiError, json, type Species } from "@/api";
-import { useSpeciesNames } from "@/hooks/useSpeciesNames";
+import SpeciesNames from "@/components/SpeciesNames";
+import { useSave } from "@/hooks/useSave";
 import { cn } from "cn";
 
 /** How long typing pauses before the search runs. */
-export const SEARCH_DELAY_MS = 200;
+const SEARCH_DELAY_MS = 200;
 const RESULTS = 8;
 
 type Props = {
@@ -60,7 +61,6 @@ export default function SpeciesPicker({
   className,
 }: Props) {
   const id = useId();
-  const { name, otherNames } = useSpeciesNames();
   const input = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Species[] | null>(null); // null: not searched for this text yet
@@ -182,10 +182,7 @@ export default function SpeciesPicker({
                     Add “{text}” as a new species
                   </span>
                 ) : (
-                  <>
-                    <span className="font-medium">{name(option.species)}</span>
-                    <span className="text-xs text-muted-foreground">{otherNames(option.species)}</span>
-                  </>
+                  <SpeciesNames species={option.species} />
                 )}
               </div>
             ))}
@@ -194,11 +191,7 @@ export default function SpeciesPicker({
         </PopoverContent>
       </Popover>
 
-      {error && (
-        <Alert variant="destructive">
-          <AlertTitle>{error}</AlertTitle>
-        </Alert>
-      )}
+      <ErrorAlert message={error} />
 
       {draft && (
         <NewSpecies
@@ -226,32 +219,28 @@ function NewSpecies({
 }) {
   const id = useId();
   const [draft, setDraft] = useState(initial);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { saving, error, run } = useSave();
   const valid = draft.scientific_name.trim() !== "" && (draft.name_en.trim() !== "" || draft.name_pt.trim() !== "");
 
-  async function submit(event: FormEvent) {
+  function submit(event: FormEvent) {
     event.preventDefault();
-    setSaving(true);
-    setError(null);
     const body = {
       scientific_name: draft.scientific_name,
       name_en: draft.name_en || null,
       name_pt: draft.name_pt || null,
     };
-    try {
-      onCreated(await api<Species>("/species", json("POST", body)));
-    } catch (problem) {
-      // A 409 names the species when it exists already (another case, or a name the search didn't match): use it.
-      const existing = problem instanceof ApiError ? problem.body.species_id : undefined;
-      const found = typeof existing === "number" ? await api<Species>(`/species/${existing}`).catch(() => null) : null;
-      if (found) {
+    void run(async () => {
+      try {
+        onCreated(await api<Species>("/species", json("POST", body)));
+      } catch (problem) {
+        // A 409 names the species when it exists already (another case, or a name the search didn't match): use it.
+        const existing = problem instanceof ApiError ? problem.body.species_id : undefined;
+        const found =
+          typeof existing === "number" ? await api<Species>(`/species/${existing}`).catch(() => null) : null;
+        if (!found) throw problem;
         onCreated(found);
-        return;
       }
-      setError(problem instanceof ApiError ? problem.message : "Could not add the species");
-      setSaving(false);
-    }
+    }, "Could not add the species");
   }
 
   const field = (key: keyof Draft, text: string) => (
@@ -269,7 +258,7 @@ function NewSpecies({
     <form
       aria-label="New species"
       className="space-y-3 rounded-lg border bg-card p-3 text-card-foreground"
-      onSubmit={(event) => void submit(event)}
+      onSubmit={submit}
     >
       <div className="flex items-center justify-between">
         <p className="font-medium">New species</p>
@@ -283,11 +272,7 @@ function NewSpecies({
       <p className="text-xs text-muted-foreground">
         The scientific name, and the English name, the Portuguese name or both.
       </p>
-      {error && (
-        <Alert variant="destructive">
-          <AlertTitle>{error}</AlertTitle>
-        </Alert>
-      )}
+      <ErrorAlert message={error} />
       <Button type="submit" disabled={!valid || saving}>
         {saving ? "Adding…" : "Add species"}
       </Button>
