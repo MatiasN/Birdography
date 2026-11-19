@@ -24,7 +24,9 @@ fi
 files=$(mktemp -d)
 trap 'rm -rf "$files"' EXIT
 # A real RAW (the NEF test sample) with a JPEG from another moment, which the Upload tab holds for a decision, and
-# a JPEG that is new every run, so it uploads instead of being a duplicate. Made by the backend's Python (Pillow).
+# a JPEG that is new every run, so it uploads instead of being a duplicate. Both are the kingfisher sample photo
+# (backend/devtools/samples, credits in CREDITS.md), the species the script picks for the batch, made by the
+# backend's Python (Pillow) with the EXIF a camera would write.
 cp "$repo/backend/tests/fixtures/raw/nikon_z5_2.nef" "$files/DSC_0412.NEF"
 jpeg() { # $1 file, $2 DateTimeOriginal, $3 description
   "$repo/scripts/dev.sh" exec -T backend python -c "
@@ -33,7 +35,8 @@ from PIL import Image
 exif = Image.Exif()
 exif[0x010F], exif[0x0110], exif[0x010E] = 'NIKON CORPORATION', 'NIKON Z5_2', sys.argv[2]
 exif.get_ifd(0x8769)[0x9003] = sys.argv[1]
-image = Image.linear_gradient('L').resize((1200, 800)).convert('RGB')
+image = Image.open('/app/devtools/samples/taligar-kingfisher-1905255_1920.jpg').convert('RGB')
+image.thumbnail((1200, 1200))
 buf = io.BytesIO(); image.save(buf, 'JPEG', exif=exif, quality=85); sys.stdout.buffer.write(buf.getvalue())
 " "$2" "$3" > "$1"
 }

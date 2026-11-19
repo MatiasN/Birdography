@@ -50,11 +50,12 @@ async function save(page, name) {
 
 const tiles = (page) => page.locator("main button:has(img)");
 
-// Catalogue with a photo open, light and dark.
+// Catalogue with a photo open, light and dark: the first photo with a species, so the details show one.
+const identified = (page) => tiles(page).filter({ hasNotText: "No species yet" }).first();
 for (const dark of [false, true]) {
   const page = await open(WIDE, { dark });
   await tiles(page).first().waitFor();
-  await tiles(page).nth(1).click();
+  await identified(page).click();
   await page.getByRole("complementary").waitFor();
   await page.getByRole("complementary").locator(".leaflet-tile-loaded").first().waitFor({ timeout: 15000 });
   await save(page, dark ? "catalogue-dark" : "catalogue");
@@ -116,7 +117,7 @@ await uploadShot(PHONE, { dark: false, fresh: "DSC_0415.JPG", name: "upload-phon
 {
   const page = await open(PHONE);
   await tiles(page).first().waitFor();
-  await tiles(page).first().click();
+  await identified(page).click();
   const sheet = page.getByRole("dialog");
   await sheet.waitFor();
   await sheet.locator(".leaflet-tile-loaded").first().waitFor({ timeout: 15000 });

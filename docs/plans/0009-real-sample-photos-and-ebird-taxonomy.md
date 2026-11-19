@@ -1,6 +1,6 @@
 # Plan 0009: Real sample photos, and the eBird taxonomy
 
-Status: decisions confirmed 2026-11-19 (§9) · in progress · Roadmap: [Phase 2](../../ROADMAP.md#phase-2-locations--species) · Date: 2026-11-19
+Status: done (2026-11-19) · Roadmap: [Phase 2](../../ROADMAP.md#phase-2-locations--species) · Date: 2026-11-19
 
 Three parts:
 
@@ -208,3 +208,28 @@ One commit (and PR) per step, CI green each time:
 | D14 | Ranking: your species first, then prefix matches, then taxonomic order; hyphens as spaces; the Catalogue filter offers only species you have photographed. |
 | D15 | Default list order: taxonomic order, then scientific name. |
 | D16 | **New:** a profile setting for the main name language (English, Portuguese or scientific), used everywhere a species name is shown or picked; the other two stay as the secondary line. Stored per user (`users.species_name_language`, a migration), default English. Built with step 3. |
+
+## 10. Implementation notes (2026-11-19)
+
+- **Step 1, seeder** (`355582b`): as §2. Every seed species checked against the downloaded taxonomy (codes, both
+  names, family, order, taxonomic order): all 13 match. About 0.05 s to make a photo, 210 KB at 1600 px.
+- **Step 2, import** (`1841101`): `app/taxonomy.py` and `import-taxonomy [--dir DIR] [--if-missing]`, with stdlib
+  `urllib` (no new dependency). `--dir` covers both the dev cache and offline installs (§3.1's `--file`); the dev
+  stack mounts `.dev/taxonomy` at `/taxonomy`, created by `dev.sh` so it belongs to the user. The import runs
+  *before* the seed, and `--if-missing` checks that every species of the taxonomy has its code in the table (the
+  seed's 13 don't count as loaded). First run in the dev stack: 11,188 added, the seed's 13 unchanged, about 15 s
+  including the two downloads; later `up`s skip it. A code eBird changed for the same scientific name is followed.
+- **Step 3, search, language and merge** (`8028d23`):
+  - Pre-check 2: the ranked search over 11,201 species answers in 25–40 ms per request through the API, so no
+    index. Escapes `%` and `_` in the text.
+  - D16: `users.species_name_language` (migration 0014, check constraint), `PATCH /auth/me`, a *Species names*
+    card on the profile with an example. `speciesName`/`speciesOtherNames` take the language; components get it
+    from `useSpeciesNames()`, fed by a context in `Layout`. A species with no common names no longer repeats the
+    scientific name on its second line.
+  - D11a: `POST /species/{id}/merge-into/{target}` and `merge-species`; only species without an eBird code can be
+    merged away. The photo details show a merge button next to hand-added species (photos now carry
+    `ebird_code`), opening a picker without "Add as new".
+- **Step 4, screenshots:** the Upload tab's JPEGs are the kingfisher sample. The Catalogue and phone photo shots open
+  the first tile with a species rather than a fixed one (the first Kingfisher is below the fold with seed 42).
+  Pre-check 3: the held pair shows the camera JPEG's thumbnail, so the NEF's own preview never appears.
+- Tests: backend 326 (was 300), frontend 261 (was 252), both at 100%.

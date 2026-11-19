@@ -52,6 +52,11 @@ them, or zoom in to split it. A photo opened from the map keeps the map beside i
   <img src="docs/screenshots/map-dark.webp" alt="The Map with a group of photos open beside it, dark theme" width="49%">
 </p>
 
+**Every species, in your language.** The species list is the eBird taxonomy, over 11,000 species with their
+English, Portuguese and scientific names, loaded with one command. The search finds a species by any of the three,
+puts the ones you have photographed first, and the profile page sets which name comes first everywhere. A species
+you added by hand and later recognise can be merged into the real one, photos and all.
+
 **On any screen, in your theme.** A sidebar on desktop, a bottom tab bar on phones, with large touch targets.
 Light, dark, or whatever your system uses, chosen on the profile page.
 
@@ -134,13 +139,13 @@ environment variables in `.env`, listed in [CONTRIBUTING.md → Settings](CONTRI
 apart from any real install; see [Dev stack](CONTRIBUTING.md#dev-stack). [CONTRIBUTING.md](CONTRIBUTING.md) also
 covers running the backend and frontend by hand, the API, migrations, tests (100% coverage on both sides) and the
 design decisions behind each part, written up in [docs/plans](docs/plans). The screenshots above come from the dev
-stack: `scripts/screenshots.sh` retakes them. The bird photos in the dev stack and the screenshots are from Pixabay; the photographers
+stack: `scripts/screenshots.sh` retakes them. Species names and taxonomy come from
+[eBird](https://ebird.org) (Cornell Lab of Ornithology), downloaded by each install and not redistributed here. The bird photos in the dev stack and the screenshots are from Pixabay; the photographers
 are credited in [backend/devtools/samples/CREDITS.md](backend/devtools/samples/CREDITS.md).
 
 ## What's next
 
-Phase 2 turns the catalogue into a field guide: the eBird taxonomy as a built-in species list, regions for every
-photo, photos grouped into the places you stop at, a page per species, and the **Near me** tab with the species
+Phase 2 turns the catalogue into a field guide: after the built-in eBird species list, regions for every photo, photos grouped into the places you stop at, a page per species, and the **Near me** tab with the species
 likely around you. Phase 3 tracks the gaps: the species of a region you haven't photographed yet, your life list,
 stats. The full plan, with what is done, is in [ROADMAP.md](ROADMAP.md). Ideas and feedback are welcome in
 [issues](https://github.com/MatiasN/Birdography/issues).
