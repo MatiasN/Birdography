@@ -24,8 +24,8 @@ async def lifespan(app: FastAPI):
 
 
 def check_upload_dir() -> None:
-    """Fail at startup, not on the first upload, when the photo directory can't be written (owned by root after
-    an upgrade from an image that ran as root)."""
+    """Fail at startup, not on the first upload, when the photo directory can't be written (owned by root, as a
+    folder Docker creates for a mount is, when the image runs without its entrypoint's fix-permissions)."""
     root = Path(settings.upload_dir)
     try:
         root.mkdir(parents=True, exist_ok=True)

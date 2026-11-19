@@ -41,7 +41,6 @@ def main():
     restore.add_argument("id", type=int)
     purge = commands.add_parser("purge-trash", help="permanently delete what has been in the trash long enough")
     purge.add_argument("--days", type=int, default=settings.trash_days, help="retention in days (default TRASH_DAYS)")
-    commands.add_parser("backfill-files", help="fill hash and size for photos migrated from 0.1")
     derived = commands.add_parser("backfill-derivatives", help="generate missing previews and thumbnails")
     derived.add_argument("--photo", type=int, help="only this photo id")
     reread = commands.add_parser("reread-metadata", help="read EXIF again with ExifTool and update the catalog")
@@ -85,8 +84,6 @@ def main():
             counts = trash.purge(db, retention=timedelta(days=args.days))
             counts["temp files"] = storage.sweep_temp()
             print(", ".join(f"{n} {name}" for name, n in counts.items()) + " purged")
-        elif args.command == "backfill-files":
-            backfill_files(db)
         elif args.command == "backfill-derivatives":
             backfill_derivatives(db, args.photo)
         elif args.command == "verify-files":
@@ -134,7 +131,7 @@ def import_taxonomy(db: Session, directory: Path | None = None, if_missing: bool
 
 
 def backfill_derivatives(db: Session, photo_id: int | None = None) -> int:
-    """Generate the previews and thumbnails photos are missing (older uploads, failed or lost background jobs)."""
+    """Generate the previews and thumbnails photos are missing (failed or lost background jobs)."""
     query = select(Photo).where(Photo.deleted_at.is_(None))
     if photo_id is not None:
         query = query.where(Photo.id == photo_id)
@@ -151,8 +148,8 @@ def backfill_derivatives(db: Session, photo_id: int | None = None) -> int:
 def reread_metadata(db: Session, photo_id: int | None = None) -> int:
     """Run ExifTool again on every original and rewrite the metadata columns; what the user set by hand is kept.
 
-    For installs that stored metadata with the old exifread reader, and for photos uploaded while ExifTool was
-    missing. Trashed photos are included so that restoring one brings current metadata back.
+    For photos uploaded while ExifTool could not read them (missing, timed out, failed on the file) and after an
+    ExifTool upgrade. Trashed photos are included so that restoring one brings current metadata back.
     """
     query = select(Photo)
     if photo_id is not None:
@@ -191,8 +188,6 @@ def verify_files(db: Session, checksums: bool = False) -> int:
             print(f"missing: {file.path} (photo {file.photo_id}, {file.kind})")
             missing += 1
             continue
-        if file.sha256.startswith("pending:"):  # rows from migration 0006 before backfill-files: nothing to compare
-            continue
         if stored.stat().st_size != file.size_bytes or (checksums and storage.digest(file.path)[1] != file.sha256):
             print(f"damaged: {file.path} (photo {file.photo_id}, {file.kind})")
             damaged += 1
@@ -205,20 +200,6 @@ def verify_files(db: Session, checksums: bool = False) -> int:
             unreferenced += 1
     print(f"{checked} files checked: {missing} missing, {damaged} damaged, {unreferenced} unreferenced")
     return missing + damaged
-
-
-def backfill_files(db: Session) -> None:
-    """Complete rows created by migration 0006 with a placeholder hash and size."""
-    pending = db.scalars(select(PhotoFile).where(PhotoFile.sha256.like("pending:%"))).all()
-    hashed = 0
-    for file in pending:
-        if not storage.path(file.path).exists():
-            print(f"photo {file.photo_id}: file {file.path} missing, skipped")
-            continue
-        file.size_bytes, file.sha256 = storage.digest(file.path)
-        hashed += 1
-    db.commit()
-    print(f"{hashed} files hashed")
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -5,9 +5,9 @@ services:
     env_file: ${ENV_FILE:-.env}
     # Not published: only the backend talks to it. compose.override.yml publishes it on localhost for development.
     volumes:
-      # PostgreSQL 18+ images keep the data in a versioned subdirectory (18/docker) of this mount. A volume from
-      # the 17 image (data at the mount root) makes the container stop with a message naming pg_upgrade; see
-      # CONTRIBUTING.md → Upgrading PostgreSQL for the backup-and-restore steps.
+      # PostgreSQL 18+ images keep the data in a versioned subdirectory (18/docker) of this mount. After a major
+      # version bump the container stops with a message naming pg_upgrade; see CONTRIBUTING.md → Upgrading
+      # PostgreSQL for the backup-and-restore steps.
       - db-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]

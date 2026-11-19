@@ -114,15 +114,6 @@ jobs:
             -d '{"email": "ci@example.com", "password": "ci-password-123"}' localhost:3000/api/auth/login
           curl -fsS -b jar 'localhost:3000/api/photos/1/file?kind=original' -o restored.arw
           cmp restored.arw backend/tests/fixtures/raw/sony_ilce_7s.arw
-      # A backup from the PostGIS 17 image (used until November 2026) restores on the current one: its dump names
-      # extensions the 18 image no longer has, which restore.sh skips. See scripts/fixtures/backup-pg17/README.md.
-      - name: Restore a PostgreSQL 17 backup
-        run: |
-          scripts/restore.sh --force scripts/fixtures/backup-pg17 2>&1 | tee restore17.log
-          grep -q 'Skipping extension postgis_tiger_geocoder' restore17.log
-          test "$($COMPOSE exec -T db psql -X -tA -U birdography -d birdography -c 'SELECT count(*) FROM users')" = 1
-          curl -fsS -c jar17 -H 'Content-Type: application/json' \
-            -d '{"email": "fixture@example.com", "password": "fixture-password-123"}' localhost:3000/api/auth/login
       # scripts/dev.sh from a clean checkout: generated settings, seeded photos on the map, on its own ports.
       - name: Dev stack
         run: |

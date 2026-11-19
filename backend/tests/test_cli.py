@@ -109,26 +109,6 @@ def test_purge_trash(monkeypatch, capsys, client):
     assert stored() == []
 
 
-def test_backfill_files(monkeypatch, capsys, client):
-    complete = upload(client)
-    missing = upload(client)  # file gone from disk: left alone and reported
-    with Session(engine) as db:
-        photo = db.get(Photo, complete["id"])
-        photo.file("original").sha256, photo.file("original").size_bytes = f"pending:{photo.id}", 0
-        other = db.get(Photo, missing["id"])
-        other.file("original").sha256 = f"pending:{other.id}"
-        storage.remove(other.file("original").path)
-        db.commit()
-
-    out = run(monkeypatch, capsys, "backfill-files")
-    assert "missing, skipped" in out and "1 files hashed" in out
-    with Session(engine) as db:
-        photo = db.get(Photo, complete["id"])
-        assert photo.file("original").size_bytes > 0
-        assert len(photo.file("original").sha256) == 64
-        assert db.get(Photo, missing["id"]).file("original").sha256 == f"pending:{missing['id']}"
-
-
 @pytest.mark.exiftool
 def test_reread_metadata(monkeypatch, capsys, client):
     settings = {"iso": 800, "exposure": (1, 500), "fnumber": (28, 5), "focal_length": (600, 1)}
@@ -208,15 +188,11 @@ def test_verify_files_all_good(monkeypatch, capsys, client):
 
 
 def test_verify_files_reports_problems(monkeypatch, capsys, client):
-    photo, other, pending = upload(client), upload(client), upload(client)
+    photo, other = upload(client), upload(client)
     gone = files_of(photo["id"])["original"]
     storage.remove(gone.path)
     resized = files_of(other["id"])["original"]
     storage.path(resized.path).write_bytes(b"truncated")
-    with Session(engine) as db:  # a row from migration 0006 that backfill-files has not completed
-        db.get(PhotoFile, files_of(pending["id"])["original"].id).sha256 = f"pending:{pending['id']}"
-        db.commit()
-    storage.path(files_of(pending["id"])["original"].path).write_bytes(b"not compared")
     storage.path("stray.jpg").write_bytes(b"x")
 
     with pytest.raises(SystemExit) as exit:

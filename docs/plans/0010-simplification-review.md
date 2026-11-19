@@ -1,6 +1,6 @@
 # Plan 0010: Simplification before Phase 2 continues
 
-Status: frontend done (`c90044e`); backend §2 and §3 pending · Date: 2026-11-19
+Status: done (2026-11-19) · Date: 2026-11-19
 
 A review of the whole codebase (after plan 0009) for repeated code, dead code and needless complexity. The rules:
 behaviour stays the same (exceptions are marked), and what the roadmap needs later stays. Nothing has been
@@ -45,7 +45,7 @@ Done when the frontend suite stays at 100% coverage, with lint, format and build
    - A one-argument `or_()`.
    - A redundant `and companion`, and the `companion[0]`/`[1]` tuple indexing.
 
-## 3. Backend: code only for migrating earlier versions (listed 2026-11-19, decision pending)
+## 3. Backend: code only for migrating earlier versions (confirmed 2026-11-19)
 
 Nothing has been deployed, so no database, backup or session token from an earlier version exists outside dev
 stacks and CI.
@@ -71,3 +71,19 @@ Kept, as they serve installs from now on:
   - App code: +399 / −431 lines (net −32); the shared pieces cost some of what the duplicates saved.
   - F12 as applied: the queue fetches `/health` when the layout mounts, so the limits are known before any drop. There is no re-check of files queued earlier (simpler than planned, same effect in practice).
   - `SpeciesNames` truncates long names in the picker's options too.
+- **Backend §2, `7b010bb`:** all nine items, as listed.
+  - The CLI's `merge-species` now reports the API's messages ("Species not found", "Only a species added by hand…").
+  - The frontend reads a photo's species ids from `species`.
+- **Backend §3:**
+  - **M1:** one migration, `0001_initial_schema`. Its schema matches what the 14 old migrations built, line for line apart from column order (compared with `pg_dump --schema-only`). `downgrade base` leaves an empty database.
+    - The migration tests are down to three: models match, the extension lookup, and a full round trip.
+    - Dev stacks need `scripts/dev.sh reset`, and the test database a drop. Both were done here.
+  - **M2:** `backfill-files` and the `pending:` skip are removed.
+  - **M3:** `restore.sh` is a plain `pg_restore` into the side database. The PG17 fixture and its CI step are gone.
+    - *Upgrading PostgreSQL* stays, rewritten for any major version. Dependabot holds majors for it.
+    - `dev.sh` keeps its `pg_upgrade` hint, which also applies to future majors. Only the 17-specific "unused mount" match is gone.
+    - Checked with a backup and restore of the dev stack: 200 files, 0 missing or damaged.
+  - **M4:** tokens must carry `ver`. A new test keeps the far-future `exp` clamp covered; it was only covered by the removed test.
+  - **M5:** the wording is fixed.
+  - **`reread-metadata` is kept:** uploads are stored without metadata when ExifTool is missing, times out or fails on a file (by design, so a photo is never lost), and this command is the only way to fill that in later.
+- Tests: backend 323 (was 326), frontend 259, both at 100%.

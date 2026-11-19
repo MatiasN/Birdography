@@ -2,14 +2,10 @@ from datetime import UTC, datetime, timedelta
 
 import jwt
 import pytest
-from sqlalchemy import update
-from sqlalchemy.orm import Session
 from starlette.requests import Request
 
 from app import auth
 from app.config import settings
-from app.db import engine
-from app.models import User
 from tests.conftest import login, make_jpeg
 
 NEW = "a brand new password"
@@ -129,6 +125,7 @@ def bearer(token: str) -> dict:
 @pytest.mark.parametrize(
     "claims",
     [
+        {},  # no session version
         {"ver": 1},  # issued for an older session version
         {"ver": "x"},  # malformed
         {"sub": "not a number"},
@@ -141,15 +138,11 @@ def test_rejected_tokens(client, anon, claims):
     assert anon.get("/auth/me", headers=bearer(token)).status_code == 401
 
 
-def test_token_without_version_is_accepted_until_the_password_changes(client, anon):
-    """Tokens issued before migration 0012 have no `ver` and count as version 0."""
+def test_hand_made_token_expiring_beyond_the_calendar_works(client, anon):
+    """An `exp` past the year 9999 (a hand-made bearer token) is clamped rather than crashing the session check."""
     user_id = client.get("/auth/me").json()["id"]
-    token = jwt.encode({"sub": str(user_id), "exp": 2**40}, settings.secret_key, algorithm="HS256")
+    token = jwt.encode({"sub": str(user_id), "ver": 0, "exp": 2**40}, settings.secret_key, algorithm="HS256")
     assert anon.get("/auth/me", headers=bearer(token)).status_code == 200
-    with Session(engine) as db:
-        db.execute(update(User).values(session_version=User.session_version + 1))
-        db.commit()
-    assert anon.get("/auth/me", headers=bearer(token)).status_code == 401
 
 
 # Login throttling

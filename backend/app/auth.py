@@ -113,7 +113,7 @@ def get_current_user(
     try:
         claims = jwt.decode(token or "", settings.secret_key, algorithms=["HS256"])
         user_id = int(claims["sub"])
-        version = int(claims.get("ver", 0))  # tokens issued before migration 0012 carry none
+        version = int(claims["ver"])
     except jwt.InvalidTokenError, KeyError, ValueError, TypeError:
         raise HTTPException(401, "Not authenticated") from None
     user = db.get(User, user_id)

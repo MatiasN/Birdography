@@ -265,34 +265,23 @@ Both scripts call `docker compose`; set `COMPOSE` for anything else, for example
 
 ### Upgrading PostgreSQL
 
-The database image moved from `postgis/postgis:17-3.5` to `postgis/postgis:18-3.7` in November 2026. A PostgreSQL
-major version cannot read the previous one's data files, and the 18 images also keep their data in a versioned
-subdirectory of the mount (`/var/lib/postgresql/18/docker`, where 17 used `/var/lib/postgresql/data`). An install
-that pulls this change and runs `docker compose up` **does not lose anything**: the `db` container stops with a
-message about `pg_upgrade` and `docker compose up --wait` fails, with the 17 data untouched in the `db-data`
-volume. To move it over, take a backup on the old version and restore it on the new one:
+A PostgreSQL major version (the `18` in `postgis/postgis:18-3.7`) cannot read the previous one's data files.
+After a major bump the `db` container stops with a message about `pg_upgrade`, and the old data stays untouched in
+the `db-data` volume. Move it over with a backup on the old version and a restore on the new one:
 
 ```bash
-git fetch                                            # but don't switch yet: the stack must still be on 17
-scripts/backup.sh /safe/place                        # on 17, with the stack running
+git fetch                                            # but don't switch yet: the stack must still be on the old version
+scripts/backup.sh /safe/place                        # with the stack running
 docker compose down
 docker volume rm <project>_db-data                   # the backup is the copy; <project> is the folder name, see `docker volume ls`
-git pull                                             # now 18
-docker compose up -d --build --wait                  # empty 18 database, migrations run
+git pull                                             # the new version
+docker compose up -d --build --wait                  # empty database, migrations run
 scripts/restore.sh /safe/place/birdography-<date>    # no --force needed: the new install has no accounts yet
 ```
 
-To keep the 17 data for a rollback instead of removing it, copy the volume first:
-`docker run --rm -v <project>_db-data:/from:ro -v birdography-pg17:/to alpine cp -a /from/. /to/`. Delete
-`birdography-pg17` once the restored install has been checked.
-
-`restore.sh` prints `Skipping extension postgis_tiger_geocoder` (and `fuzzystrmatch`, and the `tiger` and
-`tiger_data` schemas) when restoring a 17 backup: the 17 image installed those into every database and PostGIS 3.7
-no longer ships the geocoder. The app uses `postgis` only, so nothing of yours is left behind. The photos restore
-as always, and the result was checked byte for byte on a 17 install upgraded this way (plan 0006). CI restores a
-17 backup (`scripts/fixtures/backup-pg17/`) on every run, so this path stays tested.
-
-The dev stack (`scripts/dev.sh`) holds disposable data: `scripts/dev.sh reset` gives it a fresh 18 database.
+To keep the old data for a rollback, copy the volume first:
+`docker run --rm -v <project>_db-data:/from:ro -v birdography-pg-old:/to alpine cp -a /from/. /to/`. Delete it once
+the restored install has been checked. The dev stack's data is disposable: `scripts/dev.sh reset` starts it over.
 
 `python -m app.cli verify-files [--checksums]` compares the catalog with the photo directory: files missing or with the wrong size (or hash, with `--checksums`, which reads everything) fail it, and files no row refers to are listed. Run it after restoring photos from your own file backup.
 
@@ -405,11 +394,9 @@ python -m app.cli purge-trash [--days N]          # permanently delete expired r
 
 Run `purge-trash` periodically (cron on the host, for example). Nothing schedules it for you yet.
 
-After upgrading an install that predates `photo_files` (migration 0006), run `python -m app.cli backfill-files` once to compute file hashes and sizes for existing photos.
-
 ## Metadata
 
-Date, camera settings and GPS are read from every upload with ExifTool and the full tag set is kept in `photos.exif`. To read them again, for example after upgrading from a version that used `exifread` (different tag names, nothing from CR3), for photos uploaded while ExifTool was missing, or after an ExifTool upgrade:
+Date, camera settings and GPS are read from every upload with ExifTool and the full tag set is kept in `photos.exif`. Uploads are never refused because ExifTool can't read them: the photo is stored without metadata and the backend logs a warning. To read them again, for photos uploaded while ExifTool was missing, timed out or failed on the file, or after an ExifTool upgrade:
 
 ```bash
 python -m app.cli reread-metadata [--photo ID]

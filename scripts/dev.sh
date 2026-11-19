@@ -348,7 +348,7 @@ cmd_up() {
         logs=$(compose logs backend 2>/dev/null || true)
         local dblogs
         dblogs=$(compose logs db 2>/dev/null || true)
-        if [[ "$dblogs" == *"unused mount/volume"* || "$dblogs" == *"pg_upgrade"* ]]; then
+        if [[ "$dblogs" == *"pg_upgrade"* ]]; then
             die "the dev database volume is from an older PostgreSQL; the dev data is disposable, so start over with" \
                 "scripts/dev.sh reset. (A real install is upgraded as in CONTRIBUTING.md → Upgrading PostgreSQL.)"
         fi
