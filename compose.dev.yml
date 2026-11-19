@@ -1,7 +1,9 @@
-# Loaded by scripts/dev.sh only, on top of compose.override.yml: the dev seeder and the switch it requires.
+# Loaded by scripts/dev.sh only, on top of compose.override.yml: the dev seeder and the switch it requires, and
+# the cached eBird taxonomy download.
 services:
   backend:
     environment:
       BIRDOGRAPHY_DEV: "1"
     volumes:
       - ./backend/devtools:/app/devtools
+      - ./.dev/taxonomy:/taxonomy

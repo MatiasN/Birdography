@@ -98,6 +98,7 @@ cd Birdography
 cp .env.example .env    # set POSTGRES_PASSWORD and SECRET_KEY, see below
 docker compose -f docker-compose.yml up -d --build
 docker compose exec backend python -m app.cli create-user you@example.com
+docker compose exec backend python -m app.cli import-taxonomy   # the eBird species list; needs internet
 ```
 
 Generate `POSTGRES_PASSWORD` and `SECRET_KEY` with `python -c "import secrets; print(secrets.token_urlsafe(32))"`;

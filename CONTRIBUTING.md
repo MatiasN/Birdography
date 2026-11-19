@@ -355,6 +355,29 @@ Failed logins are throttled: after 5 failures for one email, or 20 from one clie
 
 The client address is the one nginx forwards. Behind another reverse proxy, set `TRUSTED_PROXIES` to its address, otherwise every request counts as coming from the proxy and 20 failures block logins for everyone.
 
+## Species list
+
+The built-in species list is the [eBird taxonomy](https://science.ebird.org/en/use-ebird-data/the-ebird-taxonomy):
+every species with its English (UK) and Portuguese (Portugal) names, scientific name, eBird code, family, order and
+taxonomic order. It is not shipped with Birdography, since eBird's terms don't allow redistributing it, so it is
+downloaded from the eBird API (no key needed) when you load it:
+
+```bash
+docker compose exec backend python -m app.cli import-taxonomy               # download and load or update
+docker compose exec backend python -m app.cli import-taxonomy --dir /path   # use en_UK.json / pt_PT.json saved there
+```
+
+Run it once after installing, and again when eBird publishes a new taxonomy (each autumn) to pick up new species,
+renames and name changes. It only needs internet when it downloads. With `--dir`, files already in the folder are
+used and downloads are saved there, so an install without internet can load files copied over from another
+machine (`https://api.ebird.org/v2/ref/taxonomy/ebird?fmt=json&locale=en_UK`, and the same with `pt_PT`). Only
+`category: species` entries are loaded, not subspecies groups, hybrids or "sp." entries.
+
+Species already in the catalogue are matched by eBird code, else by scientific name; a match added by hand takes
+eBird's code and names. Species eBird doesn't have are left as they are and listed in the output, as are codes no
+longer in the taxonomy (kept, never deleted). Running it again with the same taxonomy changes nothing. The dev stack
+loads it on `scripts/dev.sh up`, downloading once into `.dev/taxonomy/`.
+
 ## Trash
 
 Deleting a photo, location, species or account through the API moves it to the trash instead of removing it. Trashed rows are hidden and recoverable for `TRASH_DAYS` (default 30). Photos linked to a trashed location or species show up as unlinked until it is restored or purged.

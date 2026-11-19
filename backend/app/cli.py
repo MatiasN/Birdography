@@ -7,7 +7,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import derivatives, exif, exiftool, storage, trash
+from app import derivatives, exif, exiftool, storage, taxonomy, trash
 from app.auth import create_user, password_problem, restore_user, set_password
 from app.config import settings
 from app.db import engine
@@ -47,6 +47,11 @@ def main():
     reread.add_argument("--photo", type=int, help="only this photo id")
     verify = commands.add_parser("verify-files", help="check that every file in the catalog is on disk, intact")
     verify.add_argument("--checksums", action="store_true", help="also compare SHA-256 hashes (reads every file)")
+    species = commands.add_parser("import-taxonomy", help="load or update the eBird species list (downloads it)")
+    species.add_argument(
+        "--dir", type=Path, help="use <locale>.json files here when present, and save what is downloaded there"
+    )
+    species.add_argument("--if-missing", action="store_true", help="do nothing if every species is loaded already")
     args = parser.parse_args()
 
     with Session(engine) as db:
@@ -83,6 +88,8 @@ def main():
         elif args.command == "verify-files":
             if verify_files(db, checksums=args.checksums):
                 raise SystemExit(1)
+        elif args.command == "import-taxonomy":
+            import_taxonomy(db, args.dir, if_missing=args.if_missing)
         else:  # reread-metadata; argparse rejects anything else
             reread_metadata(db, args.photo)
 
@@ -94,6 +101,21 @@ def ask_password() -> str:
     if password != getpass("Repeat password: "):
         raise SystemExit("Passwords do not match")
     return password
+
+
+def import_taxonomy(db: Session, directory: Path | None = None, if_missing: bool = False) -> None:
+    try:
+        if directory is None:
+            print(f"Downloading the eBird taxonomy (version {taxonomy.latest_version() or 'unknown'})...", flush=True)
+        species = taxonomy.entries(taxonomy.fetch(directory))
+    except taxonomy.TaxonomyError as err:
+        raise SystemExit(f"import-taxonomy: {err}") from None
+    if if_missing and taxonomy.loaded(db, species):
+        print(f"All {len(species)} eBird species are loaded already")
+        return
+    for line in taxonomy.load(db, species).lines():
+        print(line)
+    print(taxonomy.ATTRIBUTION)
 
 
 def backfill_derivatives(db: Session, photo_id: int | None = None) -> int:

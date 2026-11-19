@@ -12,7 +12,8 @@ usage() {
 Usage: scripts/dev.sh COMMAND [options]
 
 Commands
-  up                 start (building images), create the dev user, seed photos if it has none, print info
+  up                 start (building images), load the eBird species list, create the dev user, seed photos if
+                     it has none, print info
   seed               add photos to the dev user (one-off: flags are not saved)
   reset              delete the dev database and photos, then `up` again
   down [--volumes]   stop; --volumes also deletes the dev database (photos stay until `reset`)
@@ -335,6 +336,7 @@ cmd_up() {
     check_ports "$auto"
     compose_env # ports may have moved
     prepare_data_dir
+    mkdir -p "$DEV_DIR/taxonomy" # the eBird download, kept across `reset`; made here so it belongs to you, not root
     save_pending
     local services=()
     if [ "$DEV_MODE" = vite ]; then
@@ -356,6 +358,9 @@ cmd_up() {
         fi
         die "the stack did not start; see scripts/dev.sh logs"
     fi
+    # The eBird species list, before the seed so its species are reused. Downloaded once into .dev/taxonomy.
+    compose exec -T backend python -m app.cli import-taxonomy --dir /taxonomy --if-missing ||
+        die "loading the eBird species list failed (it needs internet the first time); run scripts/dev.sh up again"
     run_seed --if-empty
     cmd_info
     if [ "$DEV_MODE" = vite ]; then run_vite; fi
