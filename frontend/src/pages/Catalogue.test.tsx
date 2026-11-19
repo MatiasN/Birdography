@@ -75,7 +75,7 @@ describe("Catalogue", () => {
   it("shows each photo's first species, how many more it has, and names the open photo after it", async () => {
     const heron = makeSpecies({ id: 1 });
     const egret = makeSpecies({ id: 2, name_en: null, name_pt: "Garça-branca-pequena" });
-    await start([makePhoto({ id: 1, species_ids: [1, 2], species: [heron, egret] }), makePhoto({ id: 2 })]);
+    await start([makePhoto({ id: 1, species: [heron, egret] }), makePhoto({ id: 2 })]);
     await waitFor(() => expect(tiles()).toHaveLength(2));
     expect(tiles()[0]).toHaveTextContent(/^Grey Heron \+1/);
     expect(tiles()[1]).toHaveTextContent(/^No species yet/);
@@ -277,7 +277,7 @@ describe("Catalogue filters", () => {
     const filtered = `GET /photos?species_id=1&limit=${PAGE}&offset=0`;
     const { router, calls } = await start(many(3), {
       "GET /species?q=heron&limit=8&photographed=true": { body: [heron, egret] },
-      [filtered]: { body: [makePhoto({ id: 2, species_ids: [1], species: [heron] })] },
+      [filtered]: { body: [makePhoto({ id: 2, species: [heron] })] },
       "GET /photos/summary?species_id=1": { body: { photos: 1, species: 1 } },
     });
     await userEvent.type(screen.getByRole("combobox", { name: "Filter by species" }), "heron");

@@ -57,7 +57,6 @@ export type Photo = {
   lat: number | null;
   lon: number | null;
   point_manual: boolean;
-  species_ids: number[];
   species: Species[];
   location_id: number | null;
   files: PhotoFile[];

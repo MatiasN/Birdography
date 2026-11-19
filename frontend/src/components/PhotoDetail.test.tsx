@@ -147,7 +147,7 @@ describe("PhotoDetail's species", () => {
   const egret = makeSpecies({ id: 2, scientific_name: "Egretta garzetta", name_en: "Little Egret", name_pt: null });
 
   it("lists them with their other names, or says there are none", () => {
-    renderDetail(makePhoto({ species_ids: [1, 2], species: [heron, egret] }));
+    renderDetail(makePhoto({ species: [heron, egret] }));
     const items = within(section()).getAllByRole("listitem");
     expect(items[0]).toHaveTextContent("Grey HeronGarça-real · Ardea cinerea");
     expect(items[1]).toHaveTextContent("Little EgretEgretta garzetta");
@@ -159,21 +159,21 @@ describe("PhotoDetail's species", () => {
   });
 
   it("removes one and saves at once", async () => {
-    const saved = makePhoto({ species_ids: [2], species: [egret] });
+    const saved = makePhoto({ species: [egret] });
     const calls = mockApi({ "PATCH /photos/1": { body: saved } });
-    const { onChange } = renderDetail(makePhoto({ species_ids: [1, 2], species: [heron, egret] }));
+    const { onChange } = renderDetail(makePhoto({ species: [heron, egret] }));
     await userEvent.click(screen.getByRole("button", { name: "Remove Grey Heron" }));
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(saved));
     expect(calls[0].body).toEqual({ species_ids: [2] });
   });
 
   it("adds one with the picker, after the others", async () => {
-    const saved = makePhoto({ species_ids: [1, 2], species: [heron, egret] });
+    const saved = makePhoto({ species: [heron, egret] });
     const calls = mockApi({
       "GET /species?q=egret&limit=8": { body: [heron, egret] },
       "PATCH /photos/1": { body: saved },
     });
-    const { onChange } = renderDetail(makePhoto({ species_ids: [1], species: [heron] }));
+    const { onChange } = renderDetail(makePhoto({ species: [heron] }));
     await userEvent.click(screen.getByRole("button", { name: "Add species" }));
     const field = screen.getByRole("combobox", { name: "Add species" });
     expect(field).toHaveFocus();
@@ -196,13 +196,13 @@ describe("PhotoDetail's species", () => {
   it("merges a species added by hand into the one it really is", async () => {
     const mine = makeSpecies({ id: 7, scientific_name: "Robinia fakeus", name_en: "My robin", ebird_code: null });
     const robin = makeSpecies({ id: 8, scientific_name: "Erithacus rubecula", name_en: "European Robin" });
-    const after = makePhoto({ species_ids: [8], species: [robin] });
+    const after = makePhoto({ species: [robin] });
     const calls = mockApi({
       "GET /species?q=robin&limit=8": { body: [mine, robin] },
       "POST /species/7/merge-into/8": { body: robin },
       "GET /photos/1": { body: after },
     });
-    const { onChange } = renderDetail(makePhoto({ species_ids: [7, 1], species: [mine, heron] }));
+    const { onChange } = renderDetail(makePhoto({ species: [mine, heron] }));
     expect(screen.queryByRole("button", { name: "Merge Grey Heron into another species" })).not.toBeInTheDocument();
     const toggle = screen.getByRole("button", { name: "Merge My robin into another species" });
     await userEvent.click(toggle);
@@ -233,7 +233,7 @@ describe("PhotoDetail's species", () => {
   ])("shows %s when merging fails", async (_, reply, message) => {
     const mine = makeSpecies({ id: 7, scientific_name: "Robinia fakeus", name_en: "My robin", ebird_code: null });
     mockApi({ "GET /species?q=robin&limit=8": { body: [heron] }, "POST /species/7/merge-into/1": reply });
-    const { onChange } = renderDetail(makePhoto({ species_ids: [7], species: [mine] }));
+    const { onChange } = renderDetail(makePhoto({ species: [mine] }));
     await userEvent.click(screen.getByRole("button", { name: "Merge My robin into another species" }));
     await userEvent.type(screen.getByRole("combobox", { name: "Species My robin really is" }), "robin");
     await userEvent.click((await screen.findAllByRole("option"))[0]);
@@ -252,7 +252,7 @@ describe("PhotoDetail's species", () => {
     ],
   ])("shows %s when saving fails", async (_, reply, message) => {
     mockApi({ "PATCH /photos/1": reply });
-    const { onChange } = renderDetail(makePhoto({ species_ids: [1], species: [heron] }));
+    const { onChange } = renderDetail(makePhoto({ species: [heron] }));
     await userEvent.click(screen.getByRole("button", { name: "Remove Grey Heron" }));
     expect(await within(section()).findByText(message)).toBeInTheDocument();
     expect(onChange).not.toHaveBeenCalled();

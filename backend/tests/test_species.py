@@ -63,7 +63,7 @@ def test_delete_hides_species_and_unlinks_photos(client):
     assert client.delete(f"/species/{species['id']}").status_code == 204
     assert client.get(f"/species/{species['id']}").status_code == 404
     assert client.get("/species").json() == []
-    assert client.get(f"/photos/{photo['id']}").json()["species_ids"] == []
+    assert species_of(client.get(f"/photos/{photo['id']}").json()) == []
     assert client.patch(f"/photos/{photo['id']}", json={"species_ids": [species["id"]]}).status_code == 400
 
 
@@ -126,6 +126,10 @@ def test_portuguese_alone_is_enough_and_spaces_are_trimmed(client):
         None,
         "Garça-real",
     )
+
+
+def species_of(photo: dict) -> list[int]:
+    return [s["id"] for s in photo["species"]]
 
 
 # --- search with a full taxonomy (plan 0009 §3.4) --------------------------------------------------------------
@@ -203,7 +207,7 @@ def test_photographed_keeps_your_species_only(client):
     assert search(client, photographed="true") == ["Ardea cinerea", "Turdus migratorius"]
     assert search(client, photographed="true", q="robin") == ["Turdus migratorius"]
     assert search(login("other@example.com"), photographed="true") == []
-    assert photo["species_ids"]
+    assert species_of(photo)
 
 
 # --- merging a hand-added species (plan 0009 D11a) -------------------------------------------------------------
@@ -218,8 +222,8 @@ def test_merge_moves_photos_and_trashes_the_hand_added_species(client):
 
     merged = client.post(f"/species/{mine}/merge-into/{ebird}")
     assert merged.status_code == 200 and merged.json()["id"] == ebird
-    assert client.get(f"/photos/{only_mine['id']}").json()["species_ids"] == [ids["Ardea cinerea"], ebird]
-    assert client.get(f"/photos/{both['id']}").json()["species_ids"] == [ebird]
+    assert species_of(client.get(f"/photos/{only_mine['id']}").json()) == [ids["Ardea cinerea"], ebird]
+    assert species_of(client.get(f"/photos/{both['id']}").json()) == [ebird]
     with Session(engine) as db:
         assert [link.species_id for link in db.get(Photo, others["id"]).species_links] == [ebird]
         assert db.get(Species, mine).deleted_at is not None

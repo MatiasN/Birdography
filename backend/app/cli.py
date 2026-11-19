@@ -11,7 +11,7 @@ from app import derivatives, exif, exiftool, storage, taxonomy, trash
 from app.auth import create_user, password_problem, restore_user, set_password
 from app.config import settings
 from app.db import engine
-from app.models import Photo, PhotoFile, Species, User
+from app.models import Photo, PhotoFile, User
 from app.species import merge
 
 
@@ -110,15 +110,12 @@ def ask_password() -> str:
 
 
 def merge_species(db: Session, source_id: int, target_id: int) -> None:
-    source, target = db.get(Species, source_id), db.get(Species, target_id)
-    for given, row in ((source_id, source), (target_id, target)):
-        if row is None or row.deleted_at is not None:
-            raise SystemExit(f"No species with id {given}")
-    if source.id == target.id or source.ebird_code:
-        raise SystemExit("merge-species: the first species must be one added by hand, other than the second")
-    names = source.scientific_name, target.scientific_name
-    moved = merge(db, source, target)
-    print(f"Moved {moved} photos from {names[0]} to {names[1]}; {names[0]} is in the trash")
+    try:
+        target, source, moved = merge(db, source_id, target_id)
+    except (LookupError, ValueError) as err:
+        raise SystemExit(f"merge-species: {err}") from None
+    name = source.scientific_name
+    print(f"Moved {moved} photos from {name} to {target.scientific_name}; {name} is in the trash")
 
 
 def import_taxonomy(db: Session, directory: Path | None = None, if_missing: bool = False) -> None:

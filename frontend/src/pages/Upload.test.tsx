@@ -435,7 +435,7 @@ describe("Upload species", () => {
     const { sent } = await start(routesNow);
     choose(file("a.jpg"));
     await waitFor(() => expect(sent).toHaveLength(1));
-    await answer(sent[0], 201, makePhoto({ id: 7, species_ids: [1], species: [HERON] }));
+    await answer(sent[0], 201, makePhoto({ id: 7, species: [HERON] }));
     expect(within(row("a.jpg")).getByText("Grey Heron")).toBeInTheDocument(); // as the server stored them
 
     mockApiAdd({ "PATCH /photos/7": { status: 400, body: { detail: "Unknown species" } } });
@@ -450,12 +450,12 @@ describe("Upload species", () => {
     await userEvent.click(within(row("a.jpg")).getByRole("button", { name: "Remove Grey Heron" }));
     expect(await within(row("a.jpg")).findByText("Could not save the species")).toBeInTheDocument();
 
-    mockApiAdd({ "PATCH /photos/7": { body: makePhoto({ id: 7, species_ids: [], species: [] }) } });
+    mockApiAdd({ "PATCH /photos/7": { body: makePhoto({ id: 7, species: [] }) } });
     await userEvent.click(within(row("a.jpg")).getByRole("button", { name: "Remove Grey Heron" }));
     await waitFor(() => expect(within(row("a.jpg")).queryByText("Grey Heron")).not.toBeInTheDocument());
     expect(within(row("a.jpg")).queryByText("Could not save the species")).not.toBeInTheDocument();
 
-    mockApiAdd({ "PATCH /photos/7": { body: makePhoto({ id: 7, species_ids: [2], species: [EGRET] }) } });
+    mockApiAdd({ "PATCH /photos/7": { body: makePhoto({ id: 7, species: [EGRET] }) } });
     await userEvent.click(within(row("a.jpg")).getByRole("button", { name: "Add species to a.jpg" }));
     await pickSpecies(screen.getByRole("combobox", { name: "Species for a.jpg" }), "egret", /Little Egret/);
     expect(await within(row("a.jpg")).findByText("Little Egret")).toBeInTheDocument();

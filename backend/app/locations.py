@@ -1,14 +1,13 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from geoalchemy2 import WKTElement
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from app.auth import CurrentUser
-from app.db import DB
-from app.models import Location, User
+from app.db import DB, visible_or_404
+from app.models import Location
 
 router = APIRouter(prefix="/locations", tags=["locations"])
 
@@ -33,7 +32,7 @@ def list_locations(db: DB, user: CurrentUser):
 
 @router.get("/{location_id}", response_model=LocationOut)
 def get_location(location_id: int, db: DB, user: CurrentUser):
-    return _get(db, user, location_id)
+    return visible_or_404(db, Location, location_id, "Location not found", owner=user)
 
 
 @router.post("", response_model=LocationOut, status_code=201)
@@ -48,13 +47,6 @@ def create_location(data: LocationIn, db: DB, user: CurrentUser):
 @router.delete("/{location_id}", status_code=204)
 def delete_location(location_id: int, db: DB, user: CurrentUser):
     """Move the location to the trash. Its photos appear unlinked until it is restored or purged."""
-    location = _get(db, user, location_id)
+    location = visible_or_404(db, Location, location_id, "Location not found", owner=user)
     location.deleted_at = datetime.now(UTC)
     db.commit()
-
-
-def _get(db: Session, user: User, location_id: int) -> Location:
-    location = db.get(Location, location_id)
-    if not location or location.owner_id != user.id or location.deleted_at:
-        raise HTTPException(404, "Location not found")
-    return location

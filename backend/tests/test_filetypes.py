@@ -46,7 +46,7 @@ def test_tiff_family_is_told_apart_by_exiftool(tmp_path, monkeypatch):
 
     def fake_file_type(path):
         calls.append(path)
-        return {"file_type": "NEF", "extension": "nef", "mime_type": "image/x-nikon-nef"}
+        return {"file_type": "NEF"}
 
     monkeypatch.setattr(exiftool, "file_type", fake_file_type)
     assert detect(tmp_path, make_image("TIFF")) == filetypes.TYPES["nef"]
@@ -58,13 +58,13 @@ def test_tiff_family_is_told_apart_by_exiftool(tmp_path, monkeypatch):
     [("NIKON Z5_2", "nef"), (None, "nef"), ("COOLPIX P1000", "nrw"), ("Coolpix P7800", "nrw")],
 )
 def test_nrw_is_only_kept_for_coolpix(tmp_path, monkeypatch, model, fmt):
-    reported = {"file_type": "NRW", "extension": "nrw", "mime_type": "image/x-nikon-nrw", "model": model}
+    reported = {"file_type": "NRW", "model": model}
     monkeypatch.setattr(exiftool, "file_type", lambda path: reported)
     assert detect(tmp_path, make_image("TIFF")) == filetypes.TYPES[fmt]
 
 
 def test_unknown_tiff_based_raw_is_unsupported(tmp_path, monkeypatch):
-    monkeypatch.setattr(exiftool, "file_type", lambda path: {"file_type": "ERF", "extension": None, "mime_type": None})
+    monkeypatch.setattr(exiftool, "file_type", lambda path: {"file_type": "ERF"})
     assert detect(tmp_path, make_image("TIFF")) is None
 
 

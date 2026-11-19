@@ -96,7 +96,7 @@ describe("MapPage", () => {
     const { router } = await start(
       {
         "GET /photos/points": { body: [{ id: 7, ...PORTUGAL }] },
-        "GET /photos/7": { body: makePhoto({ id: 7, species_ids: [1], species: [makeSpecies()] }) },
+        "GET /photos/7": { body: makePhoto({ id: 7, species: [makeSpecies()] }) },
       },
       "/map?photo=7",
     );

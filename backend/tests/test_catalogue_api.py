@@ -34,7 +34,7 @@ def test_photos_carry_their_species_names_in_order(client):
     }
     client.delete(f"/species/{stork['id']}")
     listed = client.get("/photos").json()[0]
-    assert [s["id"] for s in listed["species"]] == listed["species_ids"] == [heron["id"]]
+    assert [s["id"] for s in listed["species"]] == [heron["id"]]
 
 
 def test_species_filter_matches_any_of_several(client):
@@ -114,7 +114,7 @@ def test_upload_with_unknown_species_stores_nothing(client):
 
 def test_upload_without_species(client):
     photo = upload(client).json()
-    assert photo["species_ids"] == [] and photo["species"] == []
+    assert photo["species"] == []
 
 
 def test_duplicate_points_at_the_users_own_photo(client):

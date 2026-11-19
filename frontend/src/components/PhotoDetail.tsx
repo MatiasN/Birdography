@@ -51,10 +51,11 @@ function SpeciesSection({ photo, onChange }: Props) {
   const [adding, setAdding] = useState(false);
   const [merging, setMerging] = useState<number | null>(null); // the hand-added species being merged
   const { saving, error, run } = useSave();
+  const ids = photo.species.map((s) => s.id);
 
-  const save = (ids: number[]) =>
+  const save = (next: number[]) =>
     run(
-      async () => onChange(await api<Photo>(`/photos/${photo.id}`, json("PATCH", { species_ids: ids }))),
+      async () => onChange(await api<Photo>(`/photos/${photo.id}`, json("PATCH", { species_ids: next }))),
       "Could not save the species",
     );
 
@@ -94,7 +95,7 @@ function SpeciesSection({ photo, onChange }: Props) {
                   size="icon-sm"
                   aria-label={`Remove ${name(species)}`}
                   disabled={saving}
-                  onClick={() => void save(photo.species_ids.filter((id) => id !== species.id))}
+                  onClick={() => void save(ids.filter((id) => id !== species.id))}
                 >
                   <XIcon />
                 </Button>
@@ -125,10 +126,10 @@ function SpeciesSection({ photo, onChange }: Props) {
             className="flex-1"
             label="Add species"
             focusOnMount
-            exclude={photo.species_ids}
+            exclude={ids}
             onPick={(species) => {
               setAdding(false);
-              void save([...photo.species_ids, species.id]);
+              void save([...ids, species.id]);
             }}
           />
           <Button variant="ghost" onClick={() => setAdding(false)}>

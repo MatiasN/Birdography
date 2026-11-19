@@ -188,7 +188,7 @@ def test_backfill_derivatives(monkeypatch, capsys, client):
 
 
 def test_restorable_kinds_match_the_parser():
-    assert set(cli.trash.RESTORABLE) == {"photo", "location", "species", "user"}
+    assert set(cli.trash.RESTORABLE) == {"photo", "location", "species"}
     assert Species in cli.trash.RESTORABLE.values()
 
 
@@ -288,11 +288,12 @@ def test_merge_species(monkeypatch, capsys, client):
     ).json()
     out = run(monkeypatch, capsys, "merge-species", str(mine["id"]), str(ebird["id"]))
     assert out.strip() == "Moved 1 photos from Robinia fakeus to Erithacus rubecula; Robinia fakeus is in the trash"
-    assert client.get(f"/photos/{photo['id']}").json()["species_ids"] == [ebird["id"]]
+    assert [s["id"] for s in client.get(f"/photos/{photo['id']}").json()["species"]] == [ebird["id"]]
 
-    with pytest.raises(SystemExit, match=f"No species with id {mine['id']}"):  # in the trash now
+    with pytest.raises(SystemExit, match="merge-species: Species not found"):  # in the trash now
         run(monkeypatch, capsys, "merge-species", str(mine["id"]), str(ebird["id"]))
-    with pytest.raises(SystemExit, match="No species with id 999"):
+    with pytest.raises(SystemExit, match="merge-species: Species not found"):
         run(monkeypatch, capsys, "merge-species", str(ebird["id"]), "999")
-    with pytest.raises(SystemExit, match="must be one added by hand"):
-        run(monkeypatch, capsys, "merge-species", str(ebird["id"]), str(ebird["id"]))
+    other = client.post("/species", json={"scientific_name": "Turdus merula", "name_en": "Blackbird"}).json()
+    with pytest.raises(SystemExit, match="merge-species: Only a species added by hand"):
+        run(monkeypatch, capsys, "merge-species", str(ebird["id"]), str(other["id"]))

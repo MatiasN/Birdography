@@ -29,11 +29,12 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import derivatives, storage, timezones
-from app.auth import create_user, password_problem, passwords, set_password
+from app.auth import create_user, password_problem, passwords, restore_user, set_password
 from app.cli import drop_root
 from app.db import engine
 from app.models import Photo, Species, User
 from app.photos import DUPLICATE, Rejected, ingest, species_links
+from app.taxonomy import Entry
 
 KM_PER_DEGREE = 111.32
 MAX_LAT = 85.0  # Web Mercator, what the map can show
@@ -54,52 +55,40 @@ CAMERAS = [
 SAMPLES_DIR = Path(__file__).parent / "samples"
 
 
-@dataclass(frozen=True)
-class SampleSpecies:
+def _species(code: str, scientific: str, en: str, pt: str, family: str, order: str, taxon_order: int) -> Entry:
     """A species as the eBird taxonomy gives it (2026, English UK and Portuguese PT names)."""
-
-    ebird_code: str
-    scientific_name: str
-    name_en: str
-    name_pt: str
-    family: str
-    order_name: str
-    taxon_order: int
+    return Entry(code, scientific, en, pt, family, order, Decimal(taxon_order))
 
 
-HERON = SampleSpecies("graher1", "Ardea cinerea", "Grey Heron", "Garça-real", "Ardeidae", "Pelecaniformes", 7803)
-CORMORANT = SampleSpecies(
+HERON = _species("graher1", "Ardea cinerea", "Grey Heron", "Garça-real", "Ardeidae", "Pelecaniformes", 7803)
+CORMORANT = _species(
     "grecor", "Phalacrocorax carbo", "Great Cormorant", "Corvo-marinho-comum", "Phalacrocoracidae", "Suliformes", 7452
 )
-WREN = SampleSpecies(
-    "winwre4", "Nannus troglodytes", "Eurasian Wren", "Carriça", "Troglodytidae", "Passeriformes", 27418
-)
-CRESTED_TIT = SampleSpecies(
+WREN = _species("winwre4", "Nannus troglodytes", "Eurasian Wren", "Carriça", "Troglodytidae", "Passeriformes", 27418)
+CRESTED_TIT = _species(
     "cretit2", "Lophophanes cristatus", "Crested Tit", "Chapim-de-poupa", "Paridae", "Passeriformes", 22093
 )
-ROBIN = SampleSpecies(
+ROBIN = _species(
     "eurrob1", "Erithacus rubecula", "European Robin", "Pisco-de-peito-ruivo", "Muscicapidae", "Passeriformes", 29444
 )
-CHAFFINCH = SampleSpecies(
+CHAFFINCH = _species(
     "comcha", "Fringilla coelebs", "Common Chaffinch", "Tentilhão", "Fringillidae", "Passeriformes", 32187
 )
-SWAN = SampleSpecies("whoswa", "Cygnus cygnus", "Whooper Swan", "Cisne-bravo", "Anatidae", "Anseriformes", 396)
-BLUE_TIT = SampleSpecies(
+SWAN = _species("whoswa", "Cygnus cygnus", "Whooper Swan", "Cisne-bravo", "Anatidae", "Anseriformes", 396)
+BLUE_TIT = _species(
     "blutit", "Cyanistes caeruleus", "Eurasian Blue Tit", "Chapim-azul", "Paridae", "Passeriformes", 22213
 )
-SPARROW = SampleSpecies(
+SPARROW = _species(
     "houspa", "Passer domesticus", "House Sparrow", "Pardal-do-telhado", "Passeridae", "Passeriformes", 31772
 )
-LONG_TAILED_TIT = SampleSpecies(
+LONG_TAILED_TIT = _species(
     "lottit1", "Aegithalos caudatus", "Long-tailed Tit", "Chapim-rabilongo", "Aegithalidae", "Passeriformes", 25319
 )
-KINGFISHER = SampleSpecies(
+KINGFISHER = _species(
     "comkin1", "Alcedo atthis", "Common Kingfisher", "Guarda-rios", "Alcedinidae", "Coraciiformes", 9981
 )
-STORK = SampleSpecies(
-    "whisto1", "Ciconia ciconia", "White Stork", "Cegonha-branca", "Ciconiidae", "Ciconiiformes", 7346
-)
-VULTURE = SampleSpecies(
+STORK = _species("whisto1", "Ciconia ciconia", "White Stork", "Cegonha-branca", "Ciconiidae", "Ciconiiformes", 7346)
+VULTURE = _species(
     "egyvul1", "Neophron percnopterus", "Egyptian Vulture", "Britango", "Accipitridae", "Accipitriformes", 7920
 )
 # The photos in samples/ and the species each shows.
@@ -254,8 +243,7 @@ def ensure_species(db: Session) -> dict[str, int]:
     for item in SPECIES:
         row = by_code.get(item.ebird_code) or by_name.get(item.scientific_name.lower())
         if row is None:
-            fields = {**item.__dict__, "taxon_order": Decimal(item.taxon_order)}
-            row = Species(**fields)
+            row = Species(**item.fields())
             db.add(row)
         found[item.scientific_name] = row
     db.commit()
@@ -334,8 +322,7 @@ def ensure_user(db: Session, email: str, password: str) -> User:
         print(f"Created user {email}")
         return create_user(db, email, password)
     if user.deleted_at is not None:
-        user.deleted_at = None
-        db.commit()
+        restore_user(db, email)
         print(f"Restored user {email} from the trash")
     if not passwords.verify(password, user.password_hash):
         set_password(db, user, password)

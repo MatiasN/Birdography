@@ -65,7 +65,6 @@ export function makePhoto(overrides: Partial<Photo> = {}): Photo {
     lat: 37.02,
     lon: -7.93,
     point_manual: false,
-    species_ids: [],
     species: [],
     location_id: null,
     files: [file("original"), file("thumbnail")],

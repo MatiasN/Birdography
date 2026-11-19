@@ -32,8 +32,8 @@ DECODE_ERRORS = (UnidentifiedImageError, OSError, ValueError, Image.Decompressio
 @dataclass
 class Derived:
     saved: storage.Saved
-    width: int
-    height: int
+    width: int | None  # None when Pillow can't read the file (stored_jpeg); made derivatives always have it
+    height: int | None
 
     def as_file(self, kind: str) -> PhotoFile:
         return PhotoFile(
@@ -105,14 +105,19 @@ def make_preview(original: str, ftype: filetypes.FileType) -> Derived | None:
             storage.remove(temp)
             log.warning("%s: preview extraction failed: %s", original, err)
             return None
-        name = storage.finalize(temp, ".jpg")
-        size, sha256 = storage.digest(name)
-        width, height = dimensions(storage.path(name))
-        if width is None:
-            storage.remove(name)
+        derived = stored_jpeg(storage.finalize(temp, ".jpg"))
+        if derived.width is None:
+            storage.remove(derived.saved.name)
             return None
-        return Derived(storage.Saved(name, size, sha256), width, height)
+        return derived
     return _jpeg(src, max_px=PREVIEW_MAX_PX, quality=90)
+
+
+def stored_jpeg(name: str) -> Derived:
+    """A JPEG already in storage (a RAW's embedded preview, a pair's camera JPEG), measured and hashed."""
+    size, sha256 = storage.digest(name)
+    width, height = dimensions(storage.path(name))
+    return Derived(storage.Saved(name, size, sha256), width, height)
 
 
 def make_thumbnail(source: str) -> Derived | None:

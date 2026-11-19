@@ -9,7 +9,7 @@ slash entries are not species a photo is tagged with.
 import json
 import urllib.error
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from decimal import Decimal
 from pathlib import Path
 
@@ -39,7 +39,7 @@ class Entry:
     taxon_order: Decimal
 
     def fields(self) -> dict:
-        return dict(self.__dict__)
+        return asdict(self)
 
 
 @dataclass

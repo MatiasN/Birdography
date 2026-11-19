@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app import derivatives, exif, exiftool, filetypes, storage
 from app.auth import CurrentUser
 from app.config import settings
-from app.db import DB
+from app.db import DB, visible, visible_or_404
 from app.models import FILE_KINDS, Location, Photo, PhotoFile, PhotoSpecies, Species, User
 from app.storage import MB
 
@@ -66,8 +66,7 @@ class PhotoOut(BaseModel):
     lat: float | None
     lon: float | None
     point_manual: bool
-    species_ids: list[int]
-    species: list[SpeciesBrief]  # the same species, in the same order, with their names
+    species: list[SpeciesBrief]  # in the order given, skipping species in the trash
     location_id: int | None = Field(validation_alias="active_location_id")
     files: list[FileOut]
 
@@ -123,9 +122,16 @@ def upload(
     the server checks again and only logs a mismatch, storing the pair as sent.
     """
     links = species_links(db, species_ids or [])
-    pair = (companion.file, companion.filename) if companion else None
     try:
-        stored = ingest(db, user, file.file, file.filename, links, pair)
+        stored = ingest(
+            db,
+            user,
+            file.file,
+            file.filename,
+            links,
+            companion=companion.file if companion else None,
+            companion_name=companion.filename if companion else None,
+        )
     except Rejected as err:
         if err.photo_id is not None:
             return JSONResponse({"detail": err.detail, "photo_id": err.photo_id}, status_code=err.status)
@@ -162,42 +168,35 @@ class Ingested:
     inline: bool  # the preview and thumbnail were made already; otherwise the caller runs `derivatives.process`
 
 
-Companion = tuple[BinaryIO, str | None]  # the camera JPEG of a RAW+JPEG pair, and its file name
-
-
 def ingest(
     db: Session,
     user: User,
     stream: BinaryIO,
     filename: str | None,
     species: list[PhotoSpecies] | None = None,
-    companion: Companion | None = None,
+    companion: BinaryIO | None = None,
+    companion_name: str | None = None,
 ) -> Ingested:
     """Store one photo for `user` and commit it; shared by the upload endpoint and the dev seeder.
 
-    Raises `Rejected` for content that is not accepted. With a `companion`, the main file must be RAW and the
-    companion a JPEG; it is stored as the preview after its metadata is dropped.
+    Raises `Rejected` for content that is not accepted. With a `companion` (the camera JPEG of a RAW+JPEG pair),
+    the main file must be RAW and the companion a JPEG; it is stored as the preview after its metadata is dropped.
     """
     try:
         temp = storage.save_temp(stream, max_bytes=settings.max_raw_upload_mb * MB)
     except storage.TooLarge:
         raise Rejected(413, f"Files are limited to {settings.max_raw_upload_mb} MB") from None
-    if temp.size == 0:
-        storage.remove(temp.name)
-        raise Rejected(400, "Empty file")
-
-    ftype = filetypes.detect(storage.path(temp.name))
-    if ftype is None:
-        storage.remove(temp.name)
-        raise Rejected(415, "Unsupported file type")
-    limit_mb = settings.max_raw_upload_mb if ftype.is_raw else settings.max_upload_mb
-    if temp.size > limit_mb * MB:
-        storage.remove(temp.name)
-        raise Rejected(413, f"{ftype.format.upper()} files are limited to {limit_mb} MB")
-    if db.scalar(select(PhotoFile.id).where(PhotoFile.sha256 == temp.sha256, PhotoFile.kind == "original")):
-        storage.remove(temp.name)
-        raise _duplicate(db, user, temp.sha256)
     try:
+        if temp.size == 0:
+            raise Rejected(400, "Empty file")
+        ftype = filetypes.detect(storage.path(temp.name))
+        if ftype is None:
+            raise Rejected(415, "Unsupported file type")
+        limit_mb = settings.max_raw_upload_mb if ftype.is_raw else settings.max_upload_mb
+        if temp.size > limit_mb * MB:
+            raise Rejected(413, f"{ftype.format.upper()} files are limited to {limit_mb} MB")
+        if db.scalar(select(PhotoFile.id).where(PhotoFile.sha256 == temp.sha256, PhotoFile.kind == "original")):
+            raise _duplicate(db, user, temp.sha256)
         partner = _check_companion(companion, ftype) if companion else None
     except Rejected:
         storage.remove(temp.name)
@@ -220,7 +219,7 @@ def ingest(
             PhotoFile(
                 kind="original",
                 path=name,
-                original_filename=(filename or "")[:255] or None,
+                original_filename=_display_name(filename),
                 mime_type=ftype.mime_type,
                 format=ftype.format,
                 is_raw=ftype.is_raw,
@@ -230,8 +229,8 @@ def ingest(
                 height=height,
             )
         ]
-        if partner and companion:
-            preview = _store_companion(partner, companion[1], meta["exif"])
+        if partner:
+            preview = _store_companion(partner, companion_name, meta["exif"])
             written.append(preview.path)
             files.append(preview)
 
@@ -254,12 +253,12 @@ def ingest(
     return Ingested(photo, inline)
 
 
-def _check_companion(companion: Companion, main: filetypes.FileType) -> storage.Saved:
+def _check_companion(companion: BinaryIO, main: filetypes.FileType) -> storage.Saved:
     """Save the companion JPEG to a temp file and check it; `Rejected` (with the temp removed) when it won't do."""
     if not main.is_raw:
         raise Rejected(400, "Only a RAW file takes a companion JPEG")
     try:
-        temp = storage.save_temp(companion[0], max_bytes=settings.max_upload_mb * MB)
+        temp = storage.save_temp(companion, max_bytes=settings.max_upload_mb * MB)
     except storage.TooLarge:
         raise Rejected(413, f"The companion JPEG is limited to {settings.max_upload_mb} MB") from None
     ftype = filetypes.detect(storage.path(temp.name)) if temp.size else None
@@ -281,21 +280,14 @@ def _store_companion(temp: storage.Saved, filename: str | None, raw_tags: dict) 
     except exiftool.ExifToolError as err:
         # The pair is still worth keeping; the RAW holds the metadata that matters.
         log.warning("%s: companion metadata not read or stripped (%s)", name, err)
-    size, sha256 = storage.digest(name)
-    width, height = derivatives.dimensions(path)
-    preview = PhotoFile(
-        kind="preview",
-        path=name,
-        original_filename=(filename or "")[:255] or None,
-        mime_type="image/jpeg",
-        format="jpeg",
-        is_raw=False,
-        size_bytes=size,
-        sha256=sha256,
-        width=width,
-        height=height,
-    )
+    preview = derivatives.stored_jpeg(name).as_file("preview")
+    preview.original_filename = _display_name(filename)
     return preview
+
+
+def _display_name(filename: str | None) -> str | None:
+    """The client's file name as stored for display: at most 255 characters, None when there is none."""
+    return (filename or "")[:255] or None
 
 
 @dataclass
@@ -306,9 +298,6 @@ class PhotoFilters:
     species_id: Annotated[list[int] | None, Query()] = None
     camera_make: str | None = None  # the brand, as in /photos/cameras: "Nikon"
     camera_model: str | None = None  # without the brand: "Z 8"
-    # The instant, in UTC.
-    taken_from: datetime | None = None
-    taken_to: datetime | None = None
     # The day on the camera's clock (taken_at_local), both days included: what the Catalogue's date filter uses.
     date_from: date | None = None
     date_to: date | None = None
@@ -322,10 +311,6 @@ class PhotoFilters:
             query = query.where(Photo.camera_make == self.camera_make)
         if self.camera_model:
             query = query.where(Photo.camera_model == self.camera_model)
-        if self.taken_from:
-            query = query.where(Photo.taken_at >= self.taken_from)
-        if self.taken_to:
-            query = query.where(Photo.taken_at <= self.taken_to)
         if self.date_from:
             query = query.where(Photo.taken_at_local >= datetime.combine(self.date_from, datetime.min.time()))
         if self.date_to:
@@ -409,10 +394,8 @@ def update_photo(photo_id: int, data: PhotoUpdate, db: DB, user: CurrentUser):
     changes = data.model_dump(exclude_unset=True)
 
     if "location_id" in changes:
-        if changes["location_id"] is not None:
-            location = db.get(Location, changes["location_id"])
-            if not location or location.owner_id != user.id or location.deleted_at:
-                raise HTTPException(400, "Unknown location")
+        if changes["location_id"] is not None and not visible(db, Location, changes["location_id"], owner=user):
+            raise HTTPException(400, "Unknown location")
         photo.location_id = changes["location_id"]
 
     if "species_ids" in changes:
@@ -478,7 +461,4 @@ def _remove_all(names: list[str]) -> None:
 
 
 def _get(db: Session, user: User, photo_id: int) -> Photo:
-    photo = db.get(Photo, photo_id)
-    if not photo or photo.owner_id != user.id or photo.deleted_at:
-        raise HTTPException(404, "Photo not found")
-    return photo
+    return visible_or_404(db, Photo, photo_id, "Photo not found", owner=user)

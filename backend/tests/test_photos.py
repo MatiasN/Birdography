@@ -119,9 +119,9 @@ def test_list_filters_by_date(client):
     early = upload(client, make_jpeg(taken_at="2026:01:10 08:00:00")).json()
     late = upload(client, make_jpeg(taken_at="2026:06:10 08:00:00")).json()
 
-    assert client.get("/photos", params={"taken_from": "2026-03-01T00:00:00Z"}).json() == [late]
-    assert client.get("/photos", params={"taken_to": "2026-03-01T00:00:00Z"}).json() == [early]
-    params = {"taken_from": "2026-01-01T00:00:00Z", "taken_to": "2026-12-31T00:00:00Z"}
+    assert client.get("/photos", params={"date_from": "2026-03-01"}).json() == [late]
+    assert client.get("/photos", params={"date_to": "2026-03-01"}).json() == [early]
+    params = {"date_from": "2026-01-01", "date_to": "2026-12-31"}
     assert [p["id"] for p in client.get("/photos", params=params).json()] == [late["id"], early["id"]]
 
 
@@ -154,12 +154,12 @@ def test_assign_several_species(client):
     photo = upload(client).json()
 
     updated = client.patch(f"/photos/{photo['id']}", json={"species_ids": [stork["id"], heron["id"]]}).json()
-    assert updated["species_ids"] == [stork["id"], heron["id"]]
+    assert [s["id"] for s in updated["species"]] == [stork["id"], heron["id"]]
     assert client.get("/photos", params={"species_id": heron["id"]}).json() == [updated]
     assert client.get("/photos", params={"species_id": stork["id"]}).json() == [updated]
 
     updated = client.patch(f"/photos/{photo['id']}", json={"species_ids": [heron["id"]]}).json()
-    assert updated["species_ids"] == [heron["id"]]
+    assert [s["id"] for s in updated["species"]] == [heron["id"]]
     assert client.get("/photos", params={"species_id": stork["id"]}).json() == []
 
 
@@ -299,7 +299,7 @@ def test_points_use_the_list_filters(client):
     nikon = upload(client, make_jpeg(camera="Nikon Z9", lat=38.0, lon=-9.0, taken_at="2026:06:10 08:00:00")).json()
 
     assert [p["id"] for p in client.get("/photos/points", params={"camera_make": "Nikon"}).json()] == [nikon["id"]]
-    from_march = client.get("/photos/points", params={"taken_from": "2026-03-01T00:00:00Z"}).json()
+    from_march = client.get("/photos/points", params={"date_from": "2026-03-01"}).json()
     assert [p["id"] for p in from_march] == [nikon["id"]]
 
 

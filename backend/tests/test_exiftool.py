@@ -28,8 +28,6 @@ def test_file_type_by_content(tmp_path):
     jpeg.write_bytes(make_jpeg())
     assert exiftool.file_type(jpeg) == {
         "file_type": "JPEG",
-        "extension": "jpg",
-        "mime_type": "image/jpeg",
         "model": None,
     }
 
@@ -37,8 +35,6 @@ def test_file_type_by_content(tmp_path):
     write_tiff(tiff, make="NIKON CORPORATION")
     assert exiftool.file_type(tiff) == {
         "file_type": "TIFF",
-        "extension": "tif",
-        "mime_type": "image/tiff",
         "model": None,
     }
 

@@ -218,7 +218,7 @@ def test_seeds_through_the_upload_path(dev, capsys):
     assert (kingfisher.name_pt, kingfisher.ebird_code, kingfisher.family) == ("Guarda-rios", "comkin1", "Alcedinidae")
     assert kingfisher.taxon_order == 9981
     expected = [list(seed.pick_sample(n, 42)["species"]) for n in (1, 2, 3)]
-    assert [[names_by_id(names)[i] for i in p.species_ids] for p in seeded] == expected
+    assert [[names_by_id(names)[i] for i in [s.id for s in p.species]] for p in seeded] == expected
     assert "now has 3 photos (3 added)" in capsys.readouterr().out
 
     run("--photos", "2", "--if-empty")

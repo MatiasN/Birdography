@@ -37,9 +37,6 @@ class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
-SPECIES_NAME_LANGUAGES = ("en", "pt", "sci")  # English, Portuguese, scientific
-
-
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (CheckConstraint("species_name_language IN ('en', 'pt', 'sci')", name="species_name_language"),)
@@ -119,11 +116,6 @@ class Photo(Base):
     species_links: Mapped[list[PhotoSpecies]] = relationship(
         cascade="all, delete-orphan", lazy="selectin", order_by="PhotoSpecies.position"
     )
-
-    @property
-    def species_ids(self) -> list[int]:
-        """Linked species, skipping those currently in the trash."""
-        return [link.species_id for link in self.species_links if link.species.deleted_at is None]
 
     @property
     def species(self) -> list[Species]:

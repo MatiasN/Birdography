@@ -8,8 +8,7 @@ from typing import BinaryIO
 
 from app.config import settings
 
-CHUNK = 1024 * 1024
-MB = 1024 * 1024
+MB = 1024 * 1024  # also the read size when copying and hashing
 # Uploads land here until their type is known; anything left behind is swept by `purge-trash`.
 TEMP_DIR = ".tmp"
 TEMP_MAX_AGE = 3600
@@ -23,9 +22,7 @@ class Saved:
 
 
 class TooLarge(Exception):
-    def __init__(self, max_bytes: int):
-        super().__init__(f"larger than {max_bytes} bytes")
-        self.max_bytes = max_bytes
+    """The stream was over the size limit given to `save_temp`."""
 
 
 def path(name: str) -> Path:
@@ -37,9 +34,9 @@ def temp_name() -> str:
     return f"{TEMP_DIR}/{uuid.uuid4().hex}"
 
 
-def save(file: BinaryIO, suffix: str, max_bytes: int | None = None) -> Saved:
+def save(file: BinaryIO, suffix: str) -> Saved:
     """Store the stream under a random final name, hashing it on the way."""
-    return _write(file, f"{uuid.uuid4().hex}{suffix}", max_bytes)
+    return _write(file, f"{uuid.uuid4().hex}{suffix}", None)
 
 
 def save_temp(file: BinaryIO, max_bytes: int | None = None) -> Saved:
@@ -59,7 +56,7 @@ def digest(name: str) -> tuple[int, str]:
     digest = hashlib.sha256()
     size = 0
     with path(name).open("rb") as f:
-        while chunk := f.read(CHUNK):
+        while chunk := f.read(MB):
             digest.update(chunk)
             size += len(chunk)
     return size, digest.hexdigest()
@@ -87,10 +84,10 @@ def _write(file: BinaryIO, name: str, max_bytes: int | None) -> Saved:
     size = 0
     try:
         with target.open("wb") as out:
-            while chunk := file.read(CHUNK):
+            while chunk := file.read(MB):
                 size += len(chunk)
                 if max_bytes is not None and size > max_bytes:
-                    raise TooLarge(max_bytes)
+                    raise TooLarge
                 out.write(chunk)
                 digest.update(chunk)
     except BaseException:

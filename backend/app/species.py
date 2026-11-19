@@ -8,10 +8,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.auth import CurrentUser
-from app.db import DB
+from app.db import DB, visible, visible_or_404
 from app.models import Photo, PhotoSpecies, Species, User
 
 router = APIRouter(prefix="/species", tags=["species"])
+NOT_FOUND = "Species not found"
 
 
 class SpeciesFields(BaseModel):
@@ -99,10 +100,7 @@ def list_species(
 
 @router.get("/{species_id}", response_model=SpeciesOut)
 def get_species(species_id: int, db: DB):
-    species = db.get(Species, species_id)
-    if not species or species.deleted_at:
-        raise HTTPException(404, "Species not found")
-    return species
+    return visible_or_404(db, Species, species_id, NOT_FOUND)
 
 
 EXISTS = "Species with this scientific name or eBird code already exists"
@@ -116,7 +114,7 @@ EXISTS = "Species with this scientific name or eBird code already exists"
 )
 def create_species(data: SpeciesIn, db: DB):
     """Add a species. The scientific name is unique regardless of case, so "ardea cinerea" finds Ardea cinerea."""
-    clash = or_(func.lower(Species.scientific_name) == data.scientific_name.lower())
+    clash = func.lower(Species.scientific_name) == data.scientific_name.lower()
     if data.ebird_code:
         clash = or_(clash, Species.ebird_code == data.ebird_code)
     existing = db.scalar(select(Species).where(clash))
@@ -136,27 +134,29 @@ def create_species(data: SpeciesIn, db: DB):
     return JSONResponse({"detail": EXISTS, "species_id": existing.id}, status_code=409)
 
 
-HAND_ADDED_ONLY = "Only a species added by hand (without an eBird code) can be merged into another"
-
-
 @router.post("/{species_id}/merge-into/{target_id}", response_model=SpeciesOut)
 def merge_species(species_id: int, target_id: int, db: DB):
     """You found out which species a hand-added one is: its photos move to `target` and it goes to the trash."""
-    source, target = db.get(Species, species_id), db.get(Species, target_id)
-    if not source or source.deleted_at or not target or target.deleted_at:
-        raise HTTPException(404, "Species not found")
+    try:
+        return merge(db, species_id, target_id)[0]
+    except LookupError as err:
+        raise HTTPException(404, str(err)) from None
+    except ValueError as err:
+        raise HTTPException(400, str(err)) from None
+
+
+def merge(db: Session, source_id: int, target_id: int) -> tuple[Species, Species, int]:
+    """Move every photo of the hand-added species `source_id` to `target_id` (keeping its place among the photo's
+    species; a photo that has both keeps the target once), then trash the source. Returns the target, the source
+    and how many photos moved. Affects every account's photos, since species are shared. Raises `LookupError` when
+    either species is missing or in the trash, `ValueError` when the source can't be merged into the target."""
+    source, target = visible(db, Species, source_id), visible(db, Species, target_id)
+    if source is None or target is None:
+        raise LookupError(NOT_FOUND)
     if source.id == target.id:
-        raise HTTPException(400, "A species cannot be merged into itself")
+        raise ValueError("A species cannot be merged into itself")
     if source.ebird_code:
-        raise HTTPException(400, HAND_ADDED_ONLY)
-    merge(db, source, target)
-    return target
-
-
-def merge(db: Session, source: Species, target: Species) -> int:
-    """Move every photo of `source` to `target` (keeping its place among the photo's species; a photo that has
-    both keeps `target` once), then trash `source`. Returns how many photos moved. Affects every account's photos,
-    since species are shared."""
+        raise ValueError("Only a species added by hand (without an eBird code) can be merged into another")
     has_target = select(PhotoSpecies.photo_id).where(PhotoSpecies.species_id == target.id)
     moved = db.execute(
         update(PhotoSpecies)
@@ -167,14 +167,12 @@ def merge(db: Session, source: Species, target: Species) -> int:
     source.deleted_at = datetime.now(UTC)
     db.commit()
     db.expire_all()
-    return moved
+    return target, source, moved
 
 
 @router.delete("/{species_id}", status_code=204)
 def delete_species(species_id: int, db: DB):
     """Move the species to the trash. Photos keep their link and show it again if the species is restored."""
-    species = db.get(Species, species_id)
-    if not species or species.deleted_at:
-        raise HTTPException(404, "Species not found")
+    species = visible_or_404(db, Species, species_id, NOT_FOUND)
     species.deleted_at = datetime.now(UTC)
     db.commit()

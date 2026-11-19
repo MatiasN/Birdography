@@ -9,7 +9,7 @@ from app import storage
 from app.config import settings
 from app.models import Location, Photo, Species, User
 
-RESTORABLE = {"photo": Photo, "location": Location, "species": Species, "user": User}
+RESTORABLE = {"photo": Photo, "location": Location, "species": Species}
 
 
 def purge(db: Session, retention: timedelta | None = None, now: datetime | None = None) -> dict[str, int]:
