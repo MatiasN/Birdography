@@ -1,6 +1,6 @@
 # Plan 0010: Simplification before Phase 2 continues
 
-Status: frontend in progress · Date: 2026-11-19
+Status: frontend done (`c90044e`); backend §2 and §3 pending · Date: 2026-11-19
 
 A review of the whole codebase (after plan 0009) for repeated code, dead code and needless complexity. The rules:
 behaviour stays the same (exceptions are marked), and what the roadmap needs later stays. Nothing has been
@@ -45,10 +45,29 @@ Done when the frontend suite stays at 100% coverage, with lint, format and build
    - A one-argument `or_()`.
    - A redundant `and companion`, and the `companion[0]`/`[1]` tuple indexing.
 
-## 3. Backend: code only for migrating earlier versions
+## 3. Backend: code only for migrating earlier versions (listed 2026-11-19, decision pending)
 
-Listed after the frontend is done (§4), for a decision before anything is removed.
+Nothing has been deployed, so no database, backup or session token from an earlier version exists outside dev
+stacks and CI.
 
-## 4. Findings and notes
+| # | What | Where | Size |
+|---|---|---|---|
+| M1 | The 14 Alembic migrations squashed into one initial migration from the current models. This also drops the frozen `BRANDS` copy and camera data migration in 0013, the 0005 rename, the 0006 placeholder hashes and the data round-trip tests. **Every existing dev database needs `scripts/dev.sh reset`** (and the test DB a drop), since their revision ids disappear. | `migrations/versions/*`, `tests/test_migrations.py` (keep `test_models_match_migrations`) | ~700 lines |
+| M2 | `backfill-files` (hash and size for photos from 0.1 / migration 0006), and `verify-files`' skip of `pending:` hashes | `cli.py`, `tests/test_cli.py` | ~45 lines |
+| M3 | Restoring PostgreSQL 17 backups: the extension filter in `restore.sh`, the `backup-pg17` fixture, its CI step, and CONTRIBUTING's *Upgrading PostgreSQL* section. `dev.sh`'s "volume from an older PostgreSQL" message too | `scripts/restore.sh`, `scripts/fixtures/backup-pg17/`, `ci.yml`, `CONTRIBUTING.md`, `scripts/dev.sh` | ~120 lines + fixture |
+| M4 | Session tokens without `ver` (issued before migration 0012) treated as version 0: require the claim | `auth.py:116` | 1 line |
+| M5 | Comments and help texts naming upgrades that never happened: `reread-metadata`'s "old exifread reader" (the command stays, for photos uploaded without ExifTool and ExifTool upgrades), `check_upload_dir`'s "image that ran as root" | `cli.py`, `main.py` | wording |
 
-To be filled in as the work goes.
+Kept, as they serve installs from now on:
+- `backfill-derivatives`, for lost background jobs.
+- `reread-metadata`.
+- `fix-permissions`, since Docker creates mount folders as root.
+- `restore.sh`'s schema-revision check and migrate-on-restore, which future backups need.
+
+## 4. Notes
+
+- **Frontend (F1–F14), `c90044e`:**
+  - 259 tests at 100%, with lint, format and build passing. The screenshot run passed end to end on the dev stack.
+  - App code: +399 / −431 lines (net −32); the shared pieces cost some of what the duplicates saved.
+  - F12 as applied: the queue fetches `/health` when the layout mounts, so the limits are known before any drop. There is no re-check of files queued earlier (simpler than planned, same effect in practice).
+  - `SpeciesNames` truncates long names in the picker's options too.
